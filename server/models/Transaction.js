@@ -77,11 +77,7 @@ const transactionSchema = new mongoose.Schema({
   },
   // Original bank transaction data
   originalDescription: String,
-  transactionType: {
-    type: String,
-    enum: ['debit', 'credit'],
-    default: 'debit'
-  },
+  // Remove transactionType field entirely since amount sign indicates type
   // Status tracking
   isDeleted: {
     type: Boolean,

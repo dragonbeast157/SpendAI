@@ -108,29 +108,51 @@ export function AnomalyDetection() {
 
       console.log('AnomalyDetection: Raw API response received:', response);
       console.log('AnomalyDetection: Response type:', typeof response);
-      console.log('AnomalyDetection: Response keys:', Object.keys(response || {}));
-      console.log('AnomalyDetection: Response.anomalies:', response?.anomalies);
-      console.log('AnomalyDetection: Response.anomalies type:', typeof response?.anomalies);
-      console.log('AnomalyDetection: Response.anomalies length:', response?.anomalies?.length);
-      console.log('AnomalyDetection: Response.summary:', response?.summary);
+      console.log('AnomalyDetection: Response success:', response?.success);
+      console.log('AnomalyDetection: Response message:', response?.message);
+      console.log('AnomalyDetection: Response debug info:', response?.debug);
+      console.log('AnomalyDetection: Response anomalies:', response?.anomalies);
+      console.log('AnomalyDetection: Response anomalies length:', response?.anomalies?.length);
+      console.log('AnomalyDetection: Response summary:', response?.summary);
+
+      // Check if we have debug info about database data
+      if (response?.debug) {
+        console.log('AnomalyDetection: DEBUG INFO from backend:', {
+          totalTransactions: response.debug.totalTransactions,
+          largeTransactions: response.debug.largeTransactions,
+          bunningsTransactions: response.debug.bunningsTransactions
+        });
+
+        if (response.debug.totalTransactions === 0) {
+          console.log('AnomalyDetection: USER HAS NO TRANSACTIONS IN DATABASE');
+          toast({
+            title: 'No transactions found',
+            description: 'Please add some transactions first to see anomaly detection.',
+            variant: 'destructive'
+          });
+        } else if (response.debug.largeTransactions > 0 || response.debug.bunningsTransactions > 0) {
+          console.log('AnomalyDetection: USER HAS TRANSACTIONS THAT SHOULD BE ANOMALIES BUT NONE DETECTED');
+          console.log('AnomalyDetection: This indicates an issue with anomaly detection logic');
+        }
+      }
 
       // Set the state
       const anomaliesArray = response?.anomalies || [];
       const summaryData = response?.summary || {};
-      
-      console.log('AnomalyDetection: Setting anomalies state to:', anomaliesArray);
-      console.log('AnomalyDetection: Setting summary state to:', summaryData);
-      
+
+      console.log('AnomalyDetection: Setting state with:', {
+        anomaliesCount: anomaliesArray.length,
+        summaryTotal: summaryData.total
+      });
+
       setAnomalies(anomaliesArray);
       setSummary(summaryData);
-      
-      console.log('AnomalyDetection: State set successfully');
+
       console.log('=== FRONTEND LOAD ANOMALIES END ===');
     } catch (error: any) {
       console.error('=== FRONTEND LOAD ANOMALIES ERROR ===');
       console.error('AnomalyDetection: Error loading anomalies:', error);
       console.error('AnomalyDetection: Error message:', error.message);
-      console.error('AnomalyDetection: Error stack:', error.stack);
       console.error('=== END FRONTEND LOAD ANOMALIES ERROR ===');
       toast({
         title: 'Error loading anomalies',
@@ -138,6 +160,7 @@ export function AnomalyDetection() {
         variant: 'destructive'
       })
     } finally {
+      console.log('AnomalyDetection: Setting loading to false');
       setLoading(false)
     }
   }

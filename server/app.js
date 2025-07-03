@@ -2,23 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const connectDB = require('./config/database');
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const bankAccountRoutes = require('./routes/bankAccountRoutes');
-const transactionRoutes = require('./routes/transactionRoutes');
-const policyRoutes = require('./routes/policyRoutes');
-const analyticsRoutes = require('./routes/analyticsRoutes');
-const aiRoutes = require('./routes/aiRoutes');
-const coachingRoutes = require('./routes/coachingRoutes');
-const analysisRoutes = require('./routes/analysisRoutes');
-const settingsRoutes = require('./routes/settingsRoutes');
-const onboardingRoutes = require('./routes/onboardingRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const indexRoutes = require('./routes/index');
+require('dotenv').config();
 
 const app = express();
 
-// Connect to MongoDB
+// Connect to database
 connectDB();
 
 // Middleware
@@ -29,40 +17,111 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Add middleware to log all incoming requests BEFORE routes
+app.use('/api', (req, res, next) => {
+  console.log('=== INCOMING API REQUEST ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('Full URL:', req.originalUrl);
+  console.log('Headers:', req.headers);
+  console.log('Query:', req.query);
+  console.log('Body:', req.body);
+  console.log('=== END INCOMING REQUEST ===');
+  next();
+});
+
+// Import routes
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const transactionRoutes = require('./routes/transactionRoutes');
+const bankAccountRoutes = require('./routes/bankAccountRoutes');
+const policyRoutes = require('./routes/policyRoutes');
+const onboardingRoutes = require('./routes/onboardingRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
+const analysisRoutes = require('./routes/analysisRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const coachingRoutes = require('./routes/coachingRoutes');
+
+// Add logging for route registration
+console.log('=== REGISTERING API ROUTES ===');
+
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/bank-accounts', bankAccountRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/policy', policyRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/coaching', coachingRoutes);
-app.use('/api/analysis', analysisRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/onboarding', onboardingRoutes);
-app.use('/api', dashboardRoutes);
-app.use('/', indexRoutes);
+console.log('Registered: /api/auth');
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Server is running' });
+app.use('/api/users', userRoutes);
+console.log('Registered: /api/users');
+
+app.use('/api/transactions', transactionRoutes);
+console.log('Registered: /api/transactions');
+
+app.use('/api/bank-accounts', bankAccountRoutes);
+console.log('Registered: /api/bank-accounts');
+
+app.use('/api/policy', policyRoutes);
+console.log('Registered: /api/policy');
+
+app.use('/api/onboarding', onboardingRoutes);
+console.log('Registered: /api/onboarding');
+
+app.use('/api/settings', settingsRoutes);
+console.log('Registered: /api/settings');
+
+app.use('/api/dashboard', dashboardRoutes);
+console.log('Registered: /api/dashboard');
+
+app.use('/api/analytics', analyticsRoutes);
+console.log('Registered: /api/analytics');
+
+app.use('/api/analysis', analysisRoutes);
+console.log('Registered: /api/analysis');
+
+app.use('/api/ai', aiRoutes);
+console.log('Registered: /api/ai');
+
+app.use('/api/coaching', coachingRoutes);
+console.log('Registered: /api/coaching');
+
+console.log('=== ROUTE REGISTRATION COMPLETE ===');
+
+// Add a test route to verify API is working
+app.get('/api/test', (req, res) => {
+  console.log('=== API TEST ROUTE HIT ===');
+  res.json({
+    success: true,
+    message: 'API is working',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server Error:', err);
-  res.status(500).json({ 
-    success: false, 
-    message: err.message || 'Internal server error' 
+  console.error('=== GLOBAL ERROR HANDLER ===');
+  console.error('Error:', err);
+  console.error('Stack:', err.stack);
+  console.error('Request URL:', req.url);
+  console.error('Request Method:', req.method);
+  console.error('=== END GLOBAL ERROR ===');
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: err.message
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    message: 'Route not found' 
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  console.log('=== 404 API ROUTE ===');
+  console.log('Requested URL:', req.originalUrl);
+  console.log('Method:', req.method);
+  console.log('Available routes should include /api/analysis/anomalies');
+  console.log('=== END 404 ===');
+  res.status(404).json({
+    success: false,
+    message: 'API route not found',
+    requestedUrl: req.originalUrl
   });
 });
 

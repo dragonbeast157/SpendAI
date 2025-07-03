@@ -92,117 +92,80 @@ class AnalysisService {
   }
 
   static async detectAnomalies(userId, filters = {}) {
-    console.log('=== DETECT ANOMALIES START ===');
-    console.log('AnalysisService: Detecting anomalies for user:', userId);
-    console.log('AnalysisService: User ID type:', typeof userId);
-    console.log('AnalysisService: Filters:', filters);
+    console.log('=== ANALYSIS SERVICE DETECT ANOMALIES START ===');
+    console.log('AnalysisService: detectAnomalies called');
+    console.log('AnalysisService: userId:', userId);
+    console.log('AnalysisService: userId type:', typeof userId);
+    console.log('AnalysisService: filters:', filters);
 
     try {
       const { dateRange = 'this-month', severityLevel = 'all' } = filters;
 
-      // Get recent transactions
-      const now = new Date();
-      let startDate;
+      console.log('AnalysisService: Extracted filters:', { dateRange, severityLevel });
 
-      switch (dateRange) {
-        case 'this-week':
-          startDate = new Date(now);
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case 'this-month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case 'last-30-days':
-          startDate = new Date(now);
-          startDate.setDate(now.getDate() - 30);
-          break;
-        default:
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      }
+      // Get ALL transactions for this user to analyze for anomalies
+      console.log('AnalysisService: About to query Transaction.find...');
+      console.log('AnalysisService: Query will be:', { userId, isDeleted: false });
 
-      console.log('AnalysisService: Date range filter - startDate:', startDate);
-      console.log('AnalysisService: Current date:', now);
-
-      // First, let's check if there are ANY transactions for this user at all
       const allUserTransactions = await Transaction.find({
         userId,
         isDeleted: false
-      }).lean();
+      }).sort({ date: -1 }).lean();
 
-      console.log('AnalysisService: TOTAL transactions for user (all time):', allUserTransactions.length);
+      console.log('AnalysisService: Transaction.find completed');
+      console.log('AnalysisService: TOTAL transactions found for user:', allUserTransactions.length);
+      console.log('AnalysisService: Transactions type:', typeof allUserTransactions);
+      console.log('AnalysisService: Transactions is array:', Array.isArray(allUserTransactions));
 
-      if (allUserTransactions.length > 0) {
-        console.log('AnalysisService: Sample of all user transactions:');
-        allUserTransactions.slice(0, 5).forEach((t, index) => {
-          console.log(`  Transaction ${index + 1}:`, {
-            id: t._id,
-            amount: t.amount,
-            date: t.date,
-            merchant: t.merchant,
-            category: t.category,
-            hasAnomaly: t.hasAnomaly
-          });
-        });
-
-        // Check date ranges
-        const dates = allUserTransactions.map(t => t.date);
-        const minDate = new Date(Math.min(...dates));
-        const maxDate = new Date(Math.max(...dates));
-        console.log('AnalysisService: Transaction date range:', {
-          earliest: minDate,
-          latest: maxDate,
-          filterStartDate: startDate
-        });
-      } else {
+      if (allUserTransactions.length === 0) {
         console.log('AnalysisService: NO TRANSACTIONS FOUND for user:', userId);
-        return {
+        const emptyResult = {
           anomalies: [],
           summary: { total: 0, major: 0, moderate: 0, minor: 0 },
           period: dateRange
         };
+        console.log('AnalysisService: Returning empty result:', emptyResult);
+        return emptyResult;
       }
 
-      // Now check transactions in the date range
-      const transactionsInRange = await Transaction.find({
-        userId,
-        isDeleted: false,
-        date: { $gte: startDate }
-      }).lean();
-
-      console.log('AnalysisService: Transactions in date range:', transactionsInRange.length);
-
-      if (transactionsInRange.length > 0) {
-        console.log('AnalysisService: Sample transactions in date range:');
-        transactionsInRange.slice(0, 5).forEach((t, index) => {
-          console.log(`  Transaction ${index + 1}:`, {
-            id: t._id,
-            amount: t.amount,
-            date: t.date,
-            merchant: t.merchant,
-            category: t.category,
-            hasAnomaly: t.hasAnomaly
-          });
+      // Log sample of all transactions
+      console.log('AnalysisService: Sample of ALL user transactions:');
+      allUserTransactions.slice(0, 10).forEach((t, index) => {
+        console.log(`  Transaction ${index + 1}:`, {
+          id: t._id,
+          amount: t.amount,
+          date: t.date,
+          merchant: t.merchant,
+          category: t.category,
+          hasAnomaly: t.hasAnomaly,
+          hasAnomalyType: typeof t.hasAnomaly
         });
-      }
+      });
 
-      // Get ALL recent transactions, but exclude those manually marked as normal
-      const recentTransactions = await Transaction.find({
-        userId,
-        isDeleted: false,
-        date: { $gte: startDate },
-        $or: [
-          { hasAnomaly: { $exists: false } },
-          { hasAnomaly: true },
-          { hasAnomaly: null },
-          { hasAnomaly: { $ne: false } }
-        ]
-      }).sort({ date: -1 }).lean();
+      // Look for obvious anomalies
+      const largeTransactions = allUserTransactions.filter(t => Math.abs(t.amount) > 500);
+      console.log('AnalysisService: Large transactions found:', largeTransactions.length);
+      largeTransactions.forEach((t, i) => {
+        console.log(`  Large transaction ${i + 1}:`, {
+          id: t._id,
+          amount: t.amount,
+          merchant: t.merchant,
+          category: t.category,
+          hasAnomaly: t.hasAnomaly
+        });
+      });
 
-      console.log('AnalysisService: Recent transactions after filtering:', recentTransactions.length);
+      // Get transactions that haven't been manually marked as normal
+      const candidateTransactions = allUserTransactions.filter(t =>
+        t.hasAnomaly !== false // Include null, undefined, and true, but exclude false
+      );
 
-      // Log details about each transaction
-      recentTransactions.forEach((transaction, index) => {
-        console.log(`AnalysisService: Filtered transaction ${index + 1}:`, {
+      console.log('AnalysisService: Candidate transactions for anomaly analysis:', candidateTransactions.length);
+      console.log('AnalysisService: Filtering logic - transactions with hasAnomaly !== false');
+
+      // Log details about candidate transactions
+      candidateTransactions.slice(0, 10).forEach((transaction, index) => {
+        console.log(`AnalysisService: Candidate transaction ${index + 1}:`, {
           id: transaction._id,
           merchant: transaction.merchant,
           amount: transaction.amount,
@@ -213,27 +176,17 @@ class AnalysisService {
         });
       });
 
-      // Get historical data for comparison (last 6 months)
-      const historicalStartDate = new Date(now);
-      historicalStartDate.setMonth(now.getMonth() - 6);
-
-      const historicalTransactions = await Transaction.find({
-        userId,
-        isDeleted: false,
-        date: { $gte: historicalStartDate, $lt: startDate }
-      }).lean();
-
-      console.log('AnalysisService: Historical transactions found:', historicalTransactions.length);
-      console.log('AnalysisService: Historical date range:', {
-        from: historicalStartDate,
-        to: startDate
-      });
+      // Use all transactions as historical data for now
+      const historicalTransactions = allUserTransactions;
+      console.log('AnalysisService: Using all transactions as historical data:', historicalTransactions.length);
 
       const anomalies = [];
+      console.log('AnalysisService: Starting to analyze each candidate transaction...');
 
-      // Analyze each recent transaction
-      for (const transaction of recentTransactions) {
-        console.log('AnalysisService: Analyzing transaction for anomaly:', {
+      // Analyze each candidate transaction
+      for (let i = 0; i < candidateTransactions.length; i++) {
+        const transaction = candidateTransactions[i];
+        console.log(`AnalysisService: Analyzing transaction ${i + 1}/${candidateTransactions.length}:`, {
           id: transaction._id,
           merchant: transaction.merchant,
           amount: transaction.amount,
@@ -246,8 +199,10 @@ class AnalysisService {
           continue;
         }
 
+        console.log('AnalysisService: About to call analyzeTransactionAnomaly...');
         const anomaly = await this.analyzeTransactionAnomaly(transaction, historicalTransactions);
-        console.log('AnalysisService: Anomaly analysis result for transaction', transaction._id, ':', anomaly);
+        console.log('AnalysisService: analyzeTransactionAnomaly completed for transaction', transaction._id);
+        console.log('AnalysisService: Anomaly analysis result:', anomaly);
 
         if (anomaly.isAnomaly) {
           console.log('AnalysisService: ANOMALY DETECTED for transaction:', {
@@ -260,11 +215,13 @@ class AnalysisService {
           });
 
           // Update the transaction in the database to mark it as an anomaly
+          console.log('AnalysisService: Updating transaction in database...');
           await Transaction.findByIdAndUpdate(transaction._id, {
             hasAnomaly: true,
             anomalyReason: anomaly.reason,
             anomalyComparison: anomaly.comparison
           });
+          console.log('AnalysisService: Transaction updated in database');
 
           anomalies.push({
             ...transaction,
@@ -275,34 +232,11 @@ class AnalysisService {
           });
         } else {
           console.log('AnalysisService: NO ANOMALY for transaction:', transaction._id);
-
-          // Update the transaction to mark it as analyzed (but not an anomaly)
-          await Transaction.findByIdAndUpdate(transaction._id, {
-            hasAnomaly: null
-          });
         }
       }
 
-      console.log('AnalysisService: TOTAL anomalies found before filtering:', anomalies.length);
-
-      // Filter by severity if specified
-      let filteredAnomalies = anomalies;
-      if (severityLevel !== 'all') {
-        filteredAnomalies = anomalies.filter(a => a.anomalyDetails.severity === severityLevel);
-        console.log('AnalysisService: Filtered anomalies by severity', severityLevel, ':', filteredAnomalies.length);
-      }
-
-      // Sort by severity and amount
-      filteredAnomalies.sort((a, b) => {
-        const severityOrder = { 'major': 3, 'moderate': 2, 'minor': 1 };
-        const aSeverity = severityOrder[a.anomalyDetails.severity] || 0;
-        const bSeverity = severityOrder[b.anomalyDetails.severity] || 0;
-
-        if (aSeverity !== bSeverity) {
-          return bSeverity - aSeverity;
-        }
-        return Math.abs(b.amount) - Math.abs(a.amount);
-      });
+      console.log('AnalysisService: Finished analyzing all transactions');
+      console.log('AnalysisService: TOTAL anomalies found:', anomalies.length);
 
       const summary = {
         total: anomalies.length,
@@ -311,19 +245,28 @@ class AnalysisService {
         minor: anomalies.filter(a => a.anomalyDetails.severity === 'minor').length
       };
 
-      console.log('AnalysisService: FINAL RESULT - anomalies:', filteredAnomalies.length);
-      console.log('AnalysisService: FINAL SUMMARY:', summary);
-      console.log('AnalysisService: FINAL ANOMALIES DATA:', filteredAnomalies);
-      console.log('=== DETECT ANOMALIES END ===');
-
-      return {
-        anomalies: filteredAnomalies,
+      const result = {
+        anomalies: anomalies,
         summary,
         period: dateRange
       };
+
+      console.log('AnalysisService: FINAL RESULT:', {
+        anomaliesCount: result.anomalies.length,
+        summary: result.summary,
+        period: result.period
+      });
+      console.log('AnalysisService: FINAL ANOMALIES:', result.anomalies);
+      console.log('=== ANALYSIS SERVICE DETECT ANOMALIES END ===');
+
+      return result;
     } catch (error) {
-      console.error('AnalysisService: Error detecting anomalies:', error.message);
+      console.error('=== ANALYSIS SERVICE DETECT ANOMALIES ERROR ===');
+      console.error('AnalysisService: Error detecting anomalies:', error);
+      console.error('AnalysisService: Error name:', error.name);
+      console.error('AnalysisService: Error message:', error.message);
       console.error('AnalysisService: Error stack:', error.stack);
+      console.error('=== END ANALYSIS SERVICE DETECT ANOMALIES ERROR ===');
       throw new Error(`Failed to detect anomalies: ${error.message}`);
     }
   }
@@ -353,9 +296,59 @@ class AnalysisService {
         return { isAnomaly: false };
       }
 
-      // Get transactions from same category and same transaction type (expenses only)
+      const currentAmount = Math.abs(transaction.amount);
+      const merchantLower = transaction.merchant.toLowerCase();
+      const categoryLower = transaction.category.toLowerCase();
+
+      console.log('AnalysisService: Transaction details for analysis:', {
+        currentAmount,
+        merchantLower,
+        categoryLower
+      });
+
+      // RULE 1: Very large transactions (over $500) are always anomalies
+      if (currentAmount > 500) {
+        console.log('AnalysisService: LARGE TRANSACTION ANOMALY - amount over $500:', currentAmount);
+        return {
+          isAnomaly: true,
+          severity: currentAmount > 1000 ? 'major' : 'moderate',
+          reason: `This $${currentAmount.toFixed(2)} ${transaction.category} expense is unusually large`,
+          comparison: `Transactions over $500 are uncommon and flagged for review`
+        };
+      }
+
+      // RULE 2: Category/merchant mismatches are always anomalies
+      const categoryMismatches = [
+        { category: 'dining', merchants: ['bunnings', 'hardware', 'officeworks', 'kmart', 'target', 'woolworths', 'coles'] },
+        { category: 'transport', merchants: ['restaurant', 'cafe', 'dining', 'food'] },
+        { category: 'groceries', merchants: ['petrol', 'gas', 'fuel', 'restaurant'] }
+      ];
+
+      for (const mismatch of categoryMismatches) {
+        if (categoryLower === mismatch.category) {
+          for (const suspiciousMerchant of mismatch.merchants) {
+            if (merchantLower.includes(suspiciousMerchant)) {
+              console.log('AnalysisService: CATEGORY MISMATCH ANOMALY detected:', {
+                category: categoryLower,
+                merchant: merchantLower,
+                suspiciousMerchant
+              });
+              return {
+                isAnomaly: true,
+                severity: 'moderate',
+                reason: `This appears to be a ${suspiciousMerchant} transaction incorrectly categorized as ${transaction.category}`,
+                comparison: `${transaction.merchant} doesn't match the ${transaction.category} category`
+              };
+            }
+          }
+        }
+      }
+
+      // RULE 3: Statistical analysis for remaining transactions
       const categoryTransactions = historicalTransactions.filter(t =>
-        t.category === transaction.category && t.amount < 0 // Only negative amounts (expenses)
+        t.category === transaction.category && 
+        t.amount < 0 && 
+        t._id.toString() !== transaction._id.toString() // Exclude the current transaction
       );
 
       console.log('AnalysisService: Historical transactions analysis:', {
@@ -364,111 +357,91 @@ class AnalysisService {
         category: transaction.category
       });
 
-      // Log some sample historical transactions for this category
-      if (categoryTransactions.length > 0) {
-        console.log('AnalysisService: Sample historical transactions for category', transaction.category, ':');
-        categoryTransactions.slice(0, 5).forEach((t, index) => {
-          console.log(`  ${index + 1}. Amount: ${t.amount}, Date: ${t.date}, Merchant: ${t.merchant}`);
-        });
-      }
-
+      // If we don't have enough historical data, use general expense analysis
       if (categoryTransactions.length < 3) {
-        console.log('AnalysisService: NOT ENOUGH historical data for anomaly detection - need at least 3, have', categoryTransactions.length);
-        
-        // Let's try a different approach - check if this transaction is significantly different from ANY historical transactions
-        const allExpenseTransactions = historicalTransactions.filter(t => t.amount < 0);
-        console.log('AnalysisService: Trying with ALL expense transactions:', allExpenseTransactions.length);
-        
-        if (allExpenseTransactions.length >= 3) {
+        console.log('AnalysisService: NOT ENOUGH category-specific historical data');
+
+        // Use all expense transactions for comparison
+        const allExpenseTransactions = historicalTransactions.filter(t => 
+          t.amount < 0 && 
+          t._id.toString() !== transaction._id.toString()
+        );
+
+        console.log('AnalysisService: Using all expense transactions for comparison:', allExpenseTransactions.length);
+
+        if (allExpenseTransactions.length >= 5) {
           const amounts = allExpenseTransactions.map(t => Math.abs(t.amount));
           const avgAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
-          const currentAmount = Math.abs(transaction.amount);
-          
+          const maxAmount = Math.max(...amounts);
+
           console.log('AnalysisService: General expense analysis:', {
             currentAmount,
             avgAmount,
-            ratio: currentAmount / avgAmount,
-            maxHistorical: Math.max(...amounts)
+            maxAmount,
+            ratio: currentAmount / avgAmount
           });
-          
-          // If this transaction is significantly larger than average, flag it
+
+          // Flag if significantly larger than average
           if (currentAmount > avgAmount * 3 && currentAmount > 100) {
             console.log('AnalysisService: ANOMALY DETECTED based on general spending pattern');
-            console.log('=== ANALYZE TRANSACTION ANOMALY END (GENERAL ANOMALY) ===');
             return {
               isAnomaly: true,
-              severity: 'moderate',
+              severity: currentAmount > avgAmount * 5 ? 'major' : 'moderate',
               reason: `This expense is unusually high compared to your typical spending patterns`,
               comparison: `This $${currentAmount.toFixed(2)} expense is much higher than your average expense of $${avgAmount.toFixed(2)}`
             };
           }
         }
-        
-        console.log('=== ANALYZE TRANSACTION ANOMALY END (INSUFFICIENT DATA) ===');
+
+        console.log('AnalysisService: NO ANOMALY detected - insufficient data and not obviously unusual');
         return { isAnomaly: false };
       }
 
+      // Statistical analysis with sufficient category data
       const amounts = categoryTransactions.map(t => Math.abs(t.amount));
       const avgAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
-      const currentAmount = Math.abs(transaction.amount);
+      const maxAmount = Math.max(...amounts);
+      const minAmount = Math.min(...amounts);
 
-      console.log('AnalysisService: Anomaly calculation:', {
+      console.log('AnalysisService: Category-specific statistical analysis:', {
         currentAmount,
         avgAmount,
+        maxAmount,
+        minAmount,
         ratio: currentAmount / avgAmount,
-        historicalCount: amounts.length,
-        minHistorical: Math.min(...amounts),
-        maxHistorical: Math.max(...amounts)
+        historicalCount: amounts.length
       });
 
       // Calculate standard deviation
       const variance = amounts.reduce((sum, amount) => sum + Math.pow(amount - avgAmount, 2), 0) / amounts.length;
       const stdDev = Math.sqrt(variance);
 
-      console.log('AnalysisService: Statistical analysis:', {
+      console.log('AnalysisService: Statistical measures:', {
         variance: variance.toFixed(2),
-        stdDev: stdDev.toFixed(2),
-        currentVsAvg: (currentAmount / avgAmount).toFixed(2)
+        stdDev: stdDev.toFixed(2)
       });
-
-      // Determine if it's an anomaly and its severity
-      const zScore = (currentAmount - avgAmount) / (stdDev || 1);
 
       let isAnomaly = false;
       let severity = 'minor';
       let reason = '';
 
-      console.log('AnalysisService: Anomaly thresholds check:', {
-        zScore: zScore.toFixed(2),
-        currentAmount,
-        avgAmount,
-        'avgAmount * 3': avgAmount * 3,
-        'avgAmount * 2.5': avgAmount * 2.5,
-        'avgAmount * 2': avgAmount * 2
-      });
-
-      // More conservative thresholds to reduce false positives
-      if (Math.abs(zScore) > 3.5 && currentAmount > avgAmount * 3) {
+      // More aggressive thresholds
+      if (currentAmount > avgAmount * 4 && currentAmount > maxAmount * 1.5) {
         isAnomaly = true;
         severity = 'major';
         reason = `This ${transaction.category} expense is highly unusual - ${Math.round(currentAmount / avgAmount)}x your typical spending`;
-        console.log('AnalysisService: MAJOR anomaly detected');
-      } else if (Math.abs(zScore) > 2.5 && currentAmount > avgAmount * 2.5) {
+      } else if (currentAmount > avgAmount * 3 && currentAmount > avgAmount + (2 * stdDev)) {
         isAnomaly = true;
         severity = 'moderate';
         reason = `This ${transaction.category} expense is significantly higher than usual`;
-        console.log('AnalysisService: MODERATE anomaly detected');
-      } else if (currentAmount > avgAmount * 2 && currentAmount > avgAmount + (2 * stdDev)) {
+      } else if (currentAmount > avgAmount * 2.5 && currentAmount > avgAmount + stdDev && currentAmount > 50) {
         isAnomaly = true;
         severity = 'minor';
         reason = `This ${transaction.category} expense is above your normal range`;
-        console.log('AnalysisService: MINOR anomaly detected');
-      } else {
-        console.log('AnalysisService: NO anomaly detected - within normal thresholds');
       }
 
-      // Additional check for very small amounts - don't flag small differences as anomalies
-      if (currentAmount < 20 && Math.abs(currentAmount - avgAmount) < 10) {
+      // Don't flag very small amounts unless they're really unusual
+      if (currentAmount < 25 && Math.abs(currentAmount - avgAmount) < 20) {
         console.log('AnalysisService: OVERRIDING anomaly detection for small amount');
         isAnomaly = false;
       }
@@ -478,10 +451,9 @@ class AnalysisService {
         severity,
         reason,
         comparison: `You usually spend $${avgAmount.toFixed(2)} on ${transaction.category}, this was $${currentAmount.toFixed(2)}`,
-        zScore: parseFloat(zScore.toFixed(2)),
         expectedRange: {
-          min: parseFloat((avgAmount - stdDev).toFixed(2)),
-          max: parseFloat((avgAmount + stdDev).toFixed(2)),
+          min: parseFloat(minAmount.toFixed(2)),
+          max: parseFloat(maxAmount.toFixed(2)),
           average: parseFloat(avgAmount.toFixed(2))
         }
       };

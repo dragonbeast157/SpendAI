@@ -5,15 +5,17 @@ class TransactionService {
 
   static async getTransactions(userId, filters = {}) {
     console.log('TransactionService: Fetching transactions for user:', userId);
-    console.log('TransactionService: Filters:', filters);
+    console.log('TransactionService: Filters received:', filters);
 
     try {
       const {
         page = 1,
-        limit = 20,
+        limit = 50, // Increased default limit from 20 to 50
         category = '',
         searchTerm = '',
         dateRange = 'this-month',
+        startDate = '',
+        endDate = '',
         anomaliesOnly = false,
         policyStatus = '',
         sortBy = 'recent'
@@ -38,32 +40,58 @@ class TransactionService {
         ];
       }
 
-      // Date range filter
-      const now = new Date();
-      let startDate, endDate;
-
-      switch (dateRange) {
-        case 'this-week':
-          startDate = new Date(now);
-          startDate.setDate(now.getDate() - now.getDay());
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case 'this-month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case 'last-month':
-          startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-          endDate = new Date(now.getFullYear(), now.getMonth(), 0);
-          break;
-        case 'this-year':
-          startDate = new Date(now.getFullYear(), 0, 1);
-          break;
-      }
-
-      if (startDate) {
-        query.date = { $gte: startDate };
+      // Date range filter - prioritize custom date range over predefined ranges
+      if (startDate || endDate) {
+        console.log('TransactionService: Using custom date range - startDate:', startDate, 'endDate:', endDate);
+        query.date = {};
+        
+        if (startDate) {
+          query.date.$gte = new Date(startDate);
+        }
+        
         if (endDate) {
-          query.date.$lte = endDate;
+          // Set end date to end of day to include transactions from the entire end date
+          const endDateTime = new Date(endDate);
+          endDateTime.setHours(23, 59, 59, 999);
+          query.date.$lte = endDateTime;
+        }
+      } else {
+        // Use predefined date ranges
+        const now = new Date();
+        let startDateRange, endDateRange;
+
+        switch (dateRange) {
+          case 'this-week':
+            startDateRange = new Date(now);
+            startDateRange.setDate(now.getDate() - now.getDay());
+            startDateRange.setHours(0, 0, 0, 0);
+            break;
+          case 'this-month':
+            startDateRange = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          case 'last-month':
+            startDateRange = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            endDateRange = new Date(now.getFullYear(), now.getMonth(), 0);
+            break;
+          case 'this-year':
+            startDateRange = new Date(now.getFullYear(), 0, 1);
+            break;
+          case 'last-3-months':
+            startDateRange = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+            break;
+          case 'last-6-months':
+            startDateRange = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+            break;
+          case 'all-time':
+            // No date filter for all time
+            break;
+        }
+
+        if (startDateRange) {
+          query.date = { $gte: startDateRange };
+          if (endDateRange) {
+            query.date.$lte = endDateRange;
+          }
         }
       }
 
@@ -102,20 +130,22 @@ class TransactionService {
         Transaction.find(query)
           .sort(sort)
           .skip(skip)
-          .limit(limit)
+          .limit(parseInt(limit))
           .lean(),
         Transaction.countDocuments(query)
       ]);
 
-      console.log('TransactionService: Found', transactions.length, 'transactions');
+      console.log('TransactionService: Found', transactions.length, 'transactions out of', total, 'total');
+      console.log('TransactionService: Date query applied:', JSON.stringify(query.date));
 
       return {
         transactions,
         pagination: {
-          page,
-          limit,
+          page: parseInt(page),
+          limit: parseInt(limit),
           total,
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / limit),
+          hasMore: skip + transactions.length < total
         }
       };
     } catch (error) {
@@ -146,30 +176,27 @@ class TransactionService {
   }
 
   static async create(userId, transactionData, userAccountType) {
-    console.log('=== TRANSACTION SERVICE CREATE START ===');
     console.log('TransactionService: Creating transaction for user:', userId);
     console.log('TransactionService: User account type:', userAccountType);
-    console.log('TransactionService: Transaction data:', transactionData);
 
     try {
+      // Remove transactionType from the data as it's not in the schema
+      const { transactionType, ...cleanTransactionData } = transactionData;
+      
       const transaction = new Transaction({
         userId,
-        ...transactionData
+        ...cleanTransactionData
       });
 
-      // Check for anomalies (improved implementation)
-      const anomalyResult = await this.detectAnomaly(userId, transactionData);
-      console.log('TransactionService: Anomaly detection result for new transaction:', anomalyResult);
+      // Check for anomalies
+      const anomalyResult = await this.detectAnomaly(userId, cleanTransactionData);
+      console.log('TransactionService: Anomaly detection result:', anomalyResult);
 
       if (anomalyResult.hasAnomaly) {
         transaction.hasAnomaly = true;
         transaction.anomalyReason = anomalyResult.reason;
         transaction.anomalyComparison = anomalyResult.comparison;
-        console.log('TransactionService: Transaction marked as anomaly:', {
-          hasAnomaly: transaction.hasAnomaly,
-          reason: transaction.anomalyReason,
-          comparison: transaction.anomalyComparison
-        });
+        console.log('TransactionService: Transaction marked as anomaly');
       }
 
       // Save first to get ID for policy check
@@ -177,10 +204,7 @@ class TransactionService {
       console.log('TransactionService: Transaction saved with ID:', savedTransaction._id);
 
       // Check policy compliance
-      console.log('TransactionService: Starting policy compliance check...');
       const userTransactions = await this.getTransactions(userId, {});
-      console.log('TransactionService: Retrieved', userTransactions.transactions.length, 'user transactions for compliance check');
-
       const complianceResult = await PolicyService.checkCompliance(
         savedTransaction,
         userAccountType,
@@ -188,29 +212,17 @@ class TransactionService {
         userId
       );
 
-      console.log('TransactionService: Policy compliance check completed');
-      console.log('TransactionService: Compliance result:', complianceResult);
+      console.log('TransactionService: Policy compliance check completed:', complianceResult);
 
       // Update with compliance result
       savedTransaction.policyStatus = complianceResult.status;
       savedTransaction.policyRule = complianceResult.rule;
       await savedTransaction.save();
 
-      console.log('TransactionService: Final transaction after policy check:', {
-        id: savedTransaction._id,
-        hasAnomaly: savedTransaction.hasAnomaly,
-        anomalyReason: savedTransaction.anomalyReason,
-        policyStatus: savedTransaction.policyStatus,
-        policyRule: savedTransaction.policyRule
-      });
-
-      console.log('=== TRANSACTION SERVICE CREATE END ===');
+      console.log('TransactionService: Transaction created successfully');
       return savedTransaction;
     } catch (error) {
-      console.error('=== TRANSACTION SERVICE CREATE ERROR ===');
       console.error('TransactionService: Error creating transaction:', error.message);
-      console.error('TransactionService: Error stack:', error.stack);
-      console.error('=== END TRANSACTION SERVICE CREATE ERROR ===');
       throw new Error(`Failed to create transaction: ${error.message}`);
     }
   }
@@ -283,10 +295,7 @@ class TransactionService {
   }
 
   static async addVoiceNote(transactionId, userId, voiceNoteData) {
-    console.log('=== TRANSACTION SERVICE ADD VOICE NOTE START ===');
     console.log('TransactionService: Adding voice note to transaction:', transactionId);
-    console.log('TransactionService: User ID:', userId);
-    console.log('TransactionService: Voice note data:', { hasAudioData: !!voiceNoteData.audioData, transcript: voiceNoteData.transcript });
 
     try {
       const transaction = await Transaction.findOneAndUpdate(
@@ -305,19 +314,13 @@ class TransactionService {
       );
 
       if (!transaction) {
-        console.error('TransactionService: Transaction not found for voice note addition');
         throw new Error('Transaction not found');
       }
 
       console.log('TransactionService: Voice note added successfully');
-      console.log('TransactionService: Updated transaction hasNote:', transaction.hasNote);
-      console.log('=== TRANSACTION SERVICE ADD VOICE NOTE END ===');
       return transaction;
     } catch (error) {
-      console.error('=== TRANSACTION SERVICE ADD VOICE NOTE ERROR ===');
       console.error('TransactionService: Error adding voice note:', error.message);
-      console.error('TransactionService: Error stack:', error.stack);
-      console.error('=== END TRANSACTION SERVICE ADD VOICE NOTE ERROR ===');
       throw new Error(`Failed to add voice note: ${error.message}`);
     }
   }
@@ -361,31 +364,9 @@ class TransactionService {
   }
 
   static async markAnomalyAsNormal(transactionId, userId) {
-    console.log('=== MARK ANOMALY AS NORMAL START ===');
     console.log('TransactionService: Marking anomaly as normal for transaction:', transactionId);
-    console.log('TransactionService: User ID:', userId);
 
     try {
-      // First, let's see the current state of the transaction
-      const currentTransaction = await Transaction.findOne({
-        _id: transactionId,
-        userId,
-        isDeleted: false
-      });
-
-      if (!currentTransaction) {
-        console.error('TransactionService: Transaction not found for anomaly marking');
-        throw new Error('Transaction not found');
-      }
-
-      console.log('TransactionService: BEFORE update - transaction state:', {
-        id: currentTransaction._id,
-        hasAnomaly: currentTransaction.hasAnomaly,
-        hasAnomalyType: typeof currentTransaction.hasAnomaly,
-        anomalyReason: currentTransaction.anomalyReason,
-        anomalyComparison: currentTransaction.anomalyComparison
-      });
-
       const transaction = await Transaction.findOneAndUpdate(
         { _id: transactionId, userId, isDeleted: false },
         {
@@ -399,57 +380,24 @@ class TransactionService {
       );
 
       if (!transaction) {
-        console.error('TransactionService: Transaction not found after update');
         throw new Error('Transaction not found');
       }
 
-      console.log('TransactionService: AFTER update - transaction state:', {
-        id: transaction._id,
-        hasAnomaly: transaction.hasAnomaly,
-        hasAnomalyType: typeof transaction.hasAnomaly,
-        anomalyReason: transaction.anomalyReason,
-        anomalyComparison: transaction.anomalyComparison
-      });
-
-      // Verify the update was successful by fetching the transaction again
-      const verifyTransaction = await Transaction.findOne({
-        _id: transactionId,
-        userId,
-        isDeleted: false
-      });
-
-      console.log('TransactionService: VERIFICATION - transaction state after save:', {
-        id: verifyTransaction._id,
-        hasAnomaly: verifyTransaction.hasAnomaly,
-        hasAnomalyType: typeof verifyTransaction.hasAnomaly,
-        anomalyReason: verifyTransaction.anomalyReason,
-        anomalyComparison: verifyTransaction.anomalyComparison
-      });
-
       console.log('TransactionService: Anomaly marked as normal successfully');
-      console.log('=== MARK ANOMALY AS NORMAL END ===');
       return transaction;
     } catch (error) {
-      console.error('=== MARK ANOMALY AS NORMAL ERROR ===');
       console.error('TransactionService: Error marking anomaly as normal:', error.message);
-      console.error('TransactionService: Error stack:', error.stack);
-      console.error('=== END MARK ANOMALY AS NORMAL ERROR ===');
       throw new Error(`Failed to mark anomaly as normal: ${error.message}`);
     }
   }
 
   static async detectAnomaly(userId, transactionData) {
     console.log('TransactionService: Detecting anomalies for transaction');
-    console.log('TransactionService: Transaction data for anomaly check:', {
-      amount: transactionData.amount,
-      category: transactionData.category,
-      merchant: transactionData.merchant
-    });
 
     try {
       // Skip income transactions (positive amounts) - these should not be flagged as anomalies
       if (transactionData.amount > 0) {
-        console.log('TransactionService: Skipping positive amount (income) transaction:', transactionData.amount);
+        console.log('TransactionService: Skipping positive amount (income) transaction');
         return { hasAnomaly: false };
       }
 
@@ -468,15 +416,10 @@ class TransactionService {
         isDeleted: false
       }).limit(50).lean();
 
-      console.log('TransactionService: Found', historicalTransactions.length, 'historical expense transactions for category:', transactionData.category);
-
-      if (historicalTransactions.length > 0) {
-        const historicalAmounts = historicalTransactions.map(t => Math.abs(t.amount));
-        console.log('TransactionService: Historical amounts for category:', historicalAmounts);
-      }
+      console.log('TransactionService: Found', historicalTransactions.length, 'historical expense transactions');
 
       if (historicalTransactions.length < 3) {
-        console.log('TransactionService: Not enough historical data for anomaly detection - need at least 3, have', historicalTransactions.length);
+        console.log('TransactionService: Not enough historical data for anomaly detection');
         return { hasAnomaly: false };
       }
 
@@ -484,37 +427,13 @@ class TransactionService {
       const avgAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
       const currentAmount = Math.abs(transactionData.amount);
 
-      console.log('TransactionService: Anomaly calculation details:', {
-        currentAmount,
-        avgAmount,
-        historicalCount: amounts.length,
-        minHistorical: Math.min(...amounts),
-        maxHistorical: Math.max(...amounts)
-      });
-
       // Calculate standard deviation for more accurate anomaly detection
       const variance = amounts.reduce((sum, amount) => sum + Math.pow(amount - avgAmount, 2), 0) / amounts.length;
       const stdDev = Math.sqrt(variance);
 
-      console.log('TransactionService: Statistical analysis:', {
-        variance,
-        stdDev,
-        currentVsAvg: currentAmount / avgAmount
-      });
-
       // More conservative thresholds to reduce false positives
       const moderateThreshold = avgAmount + (2.5 * stdDev); // 2.5 standard deviations
       const majorThreshold = avgAmount + (3.5 * stdDev); // 3.5 standard deviations
-
-      console.log('TransactionService: Anomaly thresholds:', {
-        moderateThreshold,
-        majorThreshold,
-        currentAmount
-      });
-
-      let hasAnomaly = false;
-      let severity = 'minor';
-      let reason = '';
 
       // Additional check for very small amounts - don't flag small differences as anomalies
       if (currentAmount < 20 && Math.abs(currentAmount - avgAmount) < 10) {
@@ -522,23 +441,22 @@ class TransactionService {
         return { hasAnomaly: false };
       }
 
+      let hasAnomaly = false;
+      let severity = 'minor';
+      let reason = '';
+
       if (currentAmount > majorThreshold && currentAmount > avgAmount * 3.5) {
         hasAnomaly = true;
         severity = 'major';
         reason = `This ${transactionData.category} expense is highly unusual - ${Math.round(currentAmount / avgAmount)}x your typical spending`;
-        console.log('TransactionService: MAJOR anomaly detected - currentAmount:', currentAmount, 'majorThreshold:', majorThreshold, 'avgAmount*3.5:', avgAmount * 3.5);
       } else if (currentAmount > moderateThreshold && currentAmount > avgAmount * 2.5) {
         hasAnomaly = true;
         severity = 'moderate';
         reason = `This ${transactionData.category} expense is significantly higher than usual`;
-        console.log('TransactionService: MODERATE anomaly detected - currentAmount:', currentAmount, 'moderateThreshold:', moderateThreshold, 'avgAmount*2.5:', avgAmount * 2.5);
       } else if (currentAmount > avgAmount * 2 && currentAmount > avgAmount + (2 * stdDev)) {
         hasAnomaly = true;
         severity = 'minor';
         reason = `This ${transactionData.category} expense is above your normal range`;
-        console.log('TransactionService: MINOR anomaly detected - currentAmount:', currentAmount, 'avgAmount*2:', avgAmount * 2);
-      } else {
-        console.log('TransactionService: NO anomaly detected - currentAmount:', currentAmount, 'is within normal ranges');
       }
 
       const result = {
@@ -548,7 +466,7 @@ class TransactionService {
         comparison: `You usually spend $${avgAmount.toFixed(2)} on ${transactionData.category}, this was $${currentAmount.toFixed(2)}`
       };
 
-      console.log('TransactionService: Final anomaly detection result:', result);
+      console.log('TransactionService: Anomaly detection result:', result);
       return result;
     } catch (error) {
       console.error('TransactionService: Error detecting anomaly:', error.message);

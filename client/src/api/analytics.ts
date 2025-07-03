@@ -104,6 +104,32 @@ export const getGoalTracking = () => {
   });
 };
 
+// Add a simple test function at the top
+export const testAnalysisAPI = async () => {
+  try {
+    console.log('=== TESTING ANALYSIS API CONNECTIVITY ===');
+    
+    // Test 1: Basic API test
+    console.log('Test 1: Basic analysis API test...');
+    const basicTest = await api.get('/api/analysis/test');
+    console.log('Test 1 Result:', basicTest.data);
+    
+    // Test 2: Auth test
+    console.log('Test 2: Analysis API with auth test...');
+    const authTest = await api.get('/api/analysis/test-auth');
+    console.log('Test 2 Result:', authTest.data);
+    
+    console.log('=== ANALYSIS API TESTS COMPLETE ===');
+    return { success: true, basicTest: basicTest.data, authTest: authTest.data };
+  } catch (error: any) {
+    console.error('=== ANALYSIS API TEST FAILED ===');
+    console.error('Error:', error);
+    console.error('Error response:', error.response?.data);
+    console.error('Error status:', error.response?.status);
+    return { success: false, error: error.message };
+  }
+};
+
 // Description: Get anomalies detection
 // Endpoint: GET /api/analysis/anomalies
 // Request: { dateRange?: string, severityLevel?: string }
@@ -112,6 +138,15 @@ export const getAnomalies = async (filters = {}) => {
   try {
     console.log('=== FRONTEND GET ANOMALIES START ===');
     console.log('getAnomalies: Called with filters:', filters);
+
+    // First test API connectivity
+    console.log('getAnomalies: Testing API connectivity first...');
+    const testResult = await testAnalysisAPI();
+    console.log('getAnomalies: API connectivity test result:', testResult);
+
+    if (!testResult.success) {
+      throw new Error(`API connectivity test failed: ${testResult.error}`);
+    }
 
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
@@ -122,14 +157,19 @@ export const getAnomalies = async (filters = {}) => {
 
     const url = `/api/analysis/anomalies?${params.toString()}`;
     console.log('getAnomalies: Making API call to:', url);
+    console.log('getAnomalies: About to call api.get...');
 
     const response = await api.get(url);
 
-    console.log('getAnomalies: API response received');
+    console.log('getAnomalies: API response received successfully');
     console.log('getAnomalies: Response status:', response.status);
-    console.log('getAnomalies: Response data:', response.data);
+    console.log('getAnomalies: Response headers:', response.headers);
+    console.log('getAnomalies: Raw response data:', JSON.stringify(response.data, null, 2));
+    console.log('getAnomalies: Response data type:', typeof response.data);
     console.log('getAnomalies: Response success:', response.data?.success);
-    console.log('getAnomalies: Response anomalies count:', response.data?.anomalies?.length || 0);
+    console.log('getAnomalies: Response anomalies:', response.data?.anomalies);
+    console.log('getAnomalies: Response anomalies type:', typeof response.data?.anomalies);
+    console.log('getAnomalies: Response anomalies length:', response.data?.anomalies?.length);
     console.log('getAnomalies: Response summary:', response.data?.summary);
 
     if (response.data?.anomalies && Array.isArray(response.data.anomalies)) {
@@ -140,11 +180,13 @@ export const getAnomalies = async (filters = {}) => {
           merchant: anomaly.merchant,
           amount: anomaly.amount,
           hasAnomaly: anomaly.hasAnomaly,
-          severity: anomaly.anomalyDetails?.severity
+          severity: anomaly.anomalyDetails?.severity,
+          reason: anomaly.anomalyReason
         });
       });
     } else {
       console.log('getAnomalies: NO valid anomalies array found in response');
+      console.log('getAnomalies: Anomalies value is:', response.data?.anomalies);
     }
 
     console.log('=== FRONTEND GET ANOMALIES END ===');
@@ -152,10 +194,13 @@ export const getAnomalies = async (filters = {}) => {
   } catch (error: any) {
     console.error('=== FRONTEND GET ANOMALIES ERROR ===');
     console.error('getAnomalies: Error occurred:', error);
+    console.error('getAnomalies: Error name:', error.name);
     console.error('getAnomalies: Error message:', error.message);
     console.error('getAnomalies: Error response:', error.response);
     console.error('getAnomalies: Error response data:', error.response?.data);
     console.error('getAnomalies: Error response status:', error.response?.status);
+    console.error('getAnomalies: Error response headers:', error.response?.headers);
+    console.error('getAnomalies: Error stack:', error.stack);
     console.error('=== END FRONTEND GET ANOMALIES ERROR ===');
     throw new Error(error?.response?.data?.message || error.message);
   }

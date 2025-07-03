@@ -2,10 +2,12 @@ import api from './api';
 
 // Description: Get transactions list with filters
 // Endpoint: GET /api/transactions
-// Request: { page?: number, limit?: number, category?: string, searchTerm?: string, dateRange?: string, anomaliesOnly?: boolean, policyStatus?: string }
-// Response: { transactions: Array<Transaction>, totalCount: number, hasMore: boolean }
+// Request: { page?: number, limit?: number, category?: string, searchTerm?: string, dateRange?: string, startDate?: string, endDate?: string, anomaliesOnly?: boolean, policyStatus?: string }
+// Response: { transactions: Array<Transaction>, pagination: { page: number, limit: number, total: number, pages: number, hasMore: boolean } }
 export const getTransactions = async (filters = {}) => {
   try {
+    console.log('API: getTransactions called with filters:', filters);
+    
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== '' && value !== false) {
@@ -13,9 +15,17 @@ export const getTransactions = async (filters = {}) => {
       }
     });
 
+    console.log('API: Making request to /api/transactions with params:', params.toString());
     const response = await api.get(`/api/transactions?${params.toString()}`);
+    
+    console.log('API: getTransactions response received:', {
+      transactionCount: response.data.transactions?.length,
+      pagination: response.data.pagination
+    });
+    
     return response.data;
   } catch (error: any) {
+    console.error('API: getTransactions error:', error);
     throw new Error(error?.response?.data?.message || error.message);
   }
 };
@@ -81,14 +91,14 @@ export const addVoiceNote = async (id: string, data: { audioData: string; transc
     console.log('=== ADD VOICE NOTE API CALL START ===');
     console.log('addVoiceNote: Called with transaction ID:', id);
     console.log('addVoiceNote: Voice note data:', { hasAudioData: !!data.audioData, transcript: data.transcript });
-    
+
     const response = await api.post(`/api/transactions/${id}/voice-note`, data);
-    
+
     console.log('addVoiceNote: API response received');
     console.log('addVoiceNote: Response status:', response.status);
     console.log('addVoiceNote: Response data:', response.data);
     console.log('=== ADD VOICE NOTE API CALL END ===');
-    
+
     return response.data;
   } catch (error: any) {
     console.error('=== ADD VOICE NOTE API ERROR ===');
@@ -124,14 +134,14 @@ export const markAnomalyAsNormal = async (id: string) => {
     console.log('=== MARK ANOMALY AS NORMAL API CALL START ===');
     console.log('markAnomalyAsNormal: Called with transaction ID:', id);
     console.log('markAnomalyAsNormal: Making API call to:', `/api/transactions/${id}/mark-normal`);
-    
+
     const response = await api.post(`/api/transactions/${id}/mark-normal`);
-    
+
     console.log('markAnomalyAsNormal: API response received');
     console.log('markAnomalyAsNormal: Response status:', response.status);
     console.log('markAnomalyAsNormal: Response data:', response.data);
     console.log('=== MARK ANOMALY AS NORMAL API CALL END ===');
-    
+
     return response.data;
   } catch (error: any) {
     console.error('=== MARK ANOMALY AS NORMAL API ERROR ===');
@@ -211,7 +221,17 @@ export interface TransactionFilters {
   category?: string;
   searchTerm?: string;
   dateRange?: string;
+  startDate?: string;
+  endDate?: string;
   anomaliesOnly?: boolean;
   policyStatus?: string;
   sortBy?: string;
+}
+
+export interface TransactionPagination {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+  hasMore: boolean;
 }
