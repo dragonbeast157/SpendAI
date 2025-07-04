@@ -26,6 +26,7 @@ import {
 import { TransactionDetailsModal } from '@/components/transactions/TransactionDetailsModal'
 import { VoiceRecordModal } from '@/components/transactions/VoiceRecordModal'
 import { UploadStatementModal } from '@/components/banking/UploadStatementModal'
+import { AddTransactionModal } from '@/components/transactions/AddTransactionModal'
 import {
   getTransactions,
   markTransactionAsExpected,
@@ -54,12 +55,6 @@ export function TransactionManagement() {
   const [endDate, setEndDate] = useState('')
   const [dateRange, setDateRange] = useState('this-month')
   const { toast } = useToast()
-
-  console.log('=== TRANSACTION MANAGEMENT COMPONENT RENDER ===');
-  console.log('TransactionManagement: Component rendering');
-  console.log('TransactionManagement: showUploadModal:', showUploadModal);
-  console.log('TransactionManagement: Upload Statement button will be rendered');
-  console.log('=== END TRANSACTION MANAGEMENT COMPONENT RENDER ===');
 
   // Debounced search effect
   useEffect(() => {
@@ -167,7 +162,6 @@ export function TransactionManagement() {
 
   const handleUploadStatement = async (file: File) => {
     try {
-      console.log('TransactionManagement: Starting bank statement upload process');
       await uploadBankStatement(file)
       toast({
         title: "Success",
@@ -175,7 +169,6 @@ export function TransactionManagement() {
       })
       loadTransactions()
     } catch (error) {
-      console.error('TransactionManagement: Error uploading bank statement:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to upload statement",
@@ -223,19 +216,14 @@ export function TransactionManagement() {
   }
 
   const handleUploadButtonClick = () => {
-    console.log('=== UPLOAD BUTTON CLICKED IN TRANSACTION MANAGEMENT ===');
-    console.log('TransactionManagement: Upload button clicked');
     setShowUploadModal(true);
-    console.log('=== END UPLOAD BUTTON CLICKED ===');
   }
 
   const handleAddTransactionButtonClick = () => {
-    console.log('=== ADD TRANSACTION BUTTON CLICKED ===');
     setShowAddTransactionModal(true);
   }
 
   const handleCloseUploadModal = () => {
-    console.log('=== UPLOAD MODAL CLOSING ===');
     setShowUploadModal(false);
   }
 
@@ -292,7 +280,6 @@ export function TransactionManagement() {
           </p>
         </div>
         <div className="flex gap-2">
-          {console.log('=== RENDERING HEADER BUTTONS IN TRANSACTION MANAGEMENT ===') || null}
           <Button onClick={handleAddTransactionButtonClick}>
             <Plus className="h-4 w-4 mr-2" />
             Add Transaction
@@ -301,7 +288,6 @@ export function TransactionManagement() {
             <Upload className="h-4 w-4 mr-2" />
             Upload Statement
           </Button>
-          {console.log('=== HEADER BUTTONS RENDERED ===') || null}
         </div>
       </div>
 
@@ -629,15 +615,16 @@ export function TransactionManagement() {
         onSave={handleAddVoiceNote}
       />
 
-      {/* Upload Statement Modal */}
-      {console.log('=== UPLOAD MODAL RENDER DEBUG IN TRANSACTION MANAGEMENT ===') || null}
-      {console.log('TransactionManagement: About to render UploadStatementModal') || null}
-      {console.log('TransactionManagement: showUploadModal:', showUploadModal) || null}
-      {console.log('=== END UPLOAD MODAL RENDER DEBUG ===') || null}
       <UploadStatementModal
         isOpen={showUploadModal}
         onClose={handleCloseUploadModal}
         onUpload={handleUploadStatement}
+      />
+
+      <AddTransactionModal
+        isOpen={showAddTransactionModal}
+        onClose={() => setShowAddTransactionModal(false)}
+        onSave={handleAddTransaction}
       />
     </div>
   )

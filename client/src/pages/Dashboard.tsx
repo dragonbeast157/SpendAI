@@ -67,11 +67,12 @@ export function Dashboard() {
   }, [])
 
   const loadDashboardData = async () => {
+    console.log('=== DASHBOARD FRONTEND DEBUG START ===');
     console.log('Dashboard: Starting to load dashboard data');
     try {
       setLoading(true)
       console.log('Dashboard: Making API calls...');
-      
+
       const [
         summaryData,
         weatherData,
@@ -89,7 +90,10 @@ export function Dashboard() {
       ])
 
       console.log('Dashboard: All API calls completed');
-      console.log('Dashboard: Summary data:', summaryData);
+      console.log('Dashboard: Summary data received from API:', JSON.stringify(summaryData, null, 2));
+      console.log('Dashboard: Summary totalBalance value:', summaryData?.totalBalance);
+      console.log('Dashboard: Summary totalBalance type:', typeof summaryData?.totalBalance);
+      console.log('Dashboard: Summary object keys:', Object.keys(summaryData || {}));
 
       setSummary(summaryData as DashboardSummary)
       setWeather(weatherData as SpendingWeather)
@@ -99,6 +103,7 @@ export function Dashboard() {
       setInsights(insightsData as Insight[])
 
       console.log('Dashboard: All state updated successfully');
+      console.log('Dashboard: Summary state after setSummary:', summaryData);
     } catch (error) {
       console.error('Dashboard: Error loading dashboard data:', error)
       toast({
@@ -109,6 +114,7 @@ export function Dashboard() {
     } finally {
       setLoading(false)
       console.log('Dashboard: Loading completed');
+      console.log('=== DASHBOARD FRONTEND DEBUG END ===');
     }
   }
 

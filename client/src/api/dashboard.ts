@@ -60,12 +60,22 @@ export interface Insight {
 // Response: DashboardSummary
 export const getDashboardSummary = async (): Promise<DashboardSummary> => {
   try {
+    console.log('=== DASHBOARD API DEBUG START ===');
     console.log('Dashboard API: Getting dashboard summary');
+    console.log('Dashboard API: Making request to /api/dashboard/summary');
     const response = await api.get('/api/dashboard/summary');
-    console.log('Dashboard API: Dashboard summary received:', response.data);
+    console.log('Dashboard API: Raw response received:', response);
+    console.log('Dashboard API: Response data:', JSON.stringify(response.data, null, 2));
+    console.log('Dashboard API: Response data totalBalance:', response.data?.totalBalance);
+    console.log('Dashboard API: Response data totalBalance type:', typeof response.data?.totalBalance);
+    console.log('Dashboard API: Response status:', response.status);
+    console.log('Dashboard API: Response headers:', response.headers);
+    console.log('=== DASHBOARD API DEBUG END ===');
     return response.data;
   } catch (error: any) {
     console.error('Dashboard API: Error getting dashboard summary:', error);
+    console.error('Dashboard API: Error response:', error.response);
+    console.error('Dashboard API: Error response data:', error.response?.data);
     throw new Error(error?.response?.data?.message || error.message);
   }
 };

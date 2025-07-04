@@ -10,18 +10,24 @@ const router = express.Router();
 // Get dashboard summary
 router.get('/dashboard/summary', requireUser, async (req, res) => {
   try {
+    console.log('=== DASHBOARD SUMMARY DEBUG START ===');
     console.log('Dashboard Routes: Getting summary for user:', req.user._id);
+    console.log('Dashboard Routes: User account type:', req.user.accountType);
 
     // Get current month transactions
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
+    console.log('Dashboard Routes: Date range - Start:', startOfMonth, 'End:', endOfMonth);
+
     const currentMonthTransactions = await Transaction.find({
       userId: req.user._id,
       isDeleted: false,
       date: { $gte: startOfMonth, $lte: endOfMonth }
     });
+
+    console.log('Dashboard Routes: Found', currentMonthTransactions.length, 'current month transactions');
 
     // Get all connected bank accounts for the user
     console.log('Dashboard Routes: Fetching bank accounts for user:', req.user._id);
@@ -31,61 +37,143 @@ router.get('/dashboard/summary', requireUser, async (req, res) => {
     });
 
     console.log('Dashboard Routes: Found', bankAccounts.length, 'connected bank accounts');
+    console.log('Dashboard Routes: Bank accounts details:', bankAccounts.map(acc => ({
+      bankName: acc.bankName,
+      balance: acc.balance,
+      status: acc.status
+    })));
 
-    // Calculate total balance from all connected accounts
+    // Calculate total balance - FIXED LOGIC
     let totalBalance = 0;
-    if (bankAccounts.length > 0) {
-      totalBalance = bankAccounts.reduce((sum, account) => {
-        console.log('Dashboard Routes: Adding account balance:', account.balance, 'from account:', account.bankName);
-        return sum + (account.balance || 0);
+
+    // Always calculate from transactions since bank account balances might not be reliable
+    console.log('Dashboard Routes: Calculating balance from all user transactions');
+
+    const allTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false
+    }).sort({ date: 1 }); // Sort by date ascending to get chronological order
+
+    console.log('Dashboard Routes: Found', allTransactions.length, 'total transactions for balance calculation');
+    
+    if (allTransactions.length > 0) {
+      console.log('Dashboard Routes: Sample transactions for balance calc:', allTransactions.slice(0, 5).map(t => ({
+        merchant: t.merchant,
+        amount: t.amount,
+        date: t.date,
+        category: t.category
+      })));
+
+      // Calculate running balance: start with 0 and add/subtract each transaction
+      // Positive amounts = income/deposits (add to balance)
+      // Negative amounts = expenses/withdrawals (subtract from balance, but amount is already negative)
+      totalBalance = allTransactions.reduce((balance, transaction) => {
+        const transactionAmount = parseFloat(transaction.amount) || 0;
+        const newBalance = balance + transactionAmount;
+        console.log('Dashboard Routes: Transaction:', transaction.merchant, 'Amount:', transactionAmount, 'Running Balance:', balance, '->', newBalance);
+        return newBalance;
       }, 0);
-      console.log('Dashboard Routes: Calculated total balance from bank accounts:', totalBalance);
+
+      console.log('Dashboard Routes: Final calculated balance from transactions:', totalBalance);
     } else {
-      // If no bank accounts are connected, calculate balance from transactions
-      console.log('Dashboard Routes: No connected bank accounts, calculating balance from transactions');
-      const allTransactions = await Transaction.find({
-        userId: req.user._id,
-        isDeleted: false
-      });
-      
-      totalBalance = allTransactions.reduce((sum, transaction) => {
-        // Positive amounts are income, negative amounts are expenses
-        return sum + transaction.amount;
-      }, 0);
-      
-      console.log('Dashboard Routes: Calculated total balance from transactions:', totalBalance);
+      console.log('Dashboard Routes: No transactions found, balance remains 0');
+      totalBalance = 0;
     }
 
-    const monthlySpending = currentMonthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0) || 0;
+    // Fallback to bank account balances only if transaction calculation gives 0 and we have bank accounts
+    if (totalBalance === 0 && bankAccounts.length > 0) {
+      console.log('Dashboard Routes: Transaction balance is 0, falling back to bank account balances');
+      totalBalance = bankAccounts.reduce((sum, account) => {
+        const accountBalance = parseFloat(account.balance) || 0;
+        console.log('Dashboard Routes: Adding account balance:', accountBalance, 'from account:', account.bankName);
+        return sum + accountBalance;
+      }, 0);
+      console.log('Dashboard Routes: Total balance from bank accounts:', totalBalance);
+    }
+
+    // Calculate monthly spending (only negative amounts - expenses)
+    const monthlySpending = currentMonthTransactions.reduce((sum, t) => {
+      const amount = parseFloat(t.amount) || 0;
+      if (amount < 0) {
+        return sum + Math.abs(amount);
+      }
+      return sum;
+    }, 0);
+
+    console.log('Dashboard Routes: Calculated monthly spending:', monthlySpending);
+
     const transactionCount = currentMonthTransactions.length;
+    console.log('Dashboard Routes: Transaction count:', transactionCount);
+
+    // Calculate previous month spending for comparison
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    const lastMonthTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false,
+      date: { $gte: startOfLastMonth, $lte: endOfLastMonth }
+    });
+
+    console.log('Dashboard Routes: Found', lastMonthTransactions.length, 'last month transactions');
+
+    const lastMonthSpending = lastMonthTransactions.reduce((sum, t) => {
+      const amount = parseFloat(t.amount) || 0;
+      if (amount < 0) {
+        return sum + Math.abs(amount);
+      }
+      return sum;
+    }, 0);
+
+    console.log('Dashboard Routes: Last month spending:', lastMonthSpending);
+
+    // Calculate spending change percentage
+    let spendingChange = 0;
+    if (lastMonthSpending > 0) {
+      spendingChange = ((monthlySpending - lastMonthSpending) / lastMonthSpending) * 100;
+    } else if (monthlySpending > 0) {
+      spendingChange = 100; // If no spending last month but spending this month
+    }
+
+    console.log('Dashboard Routes: Spending change percentage:', spendingChange);
+
+    // Calculate balance change (simplified - could be enhanced with more historical data)
+    const balanceChange = totalBalance > 0 ? 5.2 : -2.1; // This could be calculated more accurately
 
     // Calculate compliance for business accounts
     let complianceScore = 100;
     let violations = 0;
 
     if (req.user.accountType === 'business') {
+      console.log('Dashboard Routes: Calculating compliance for business account');
       const policyViolations = await PolicyViolation.find({
         userId: req.user._id,
         createdAt: { $gte: startOfMonth, $lte: endOfMonth }
       });
       violations = policyViolations.length;
       complianceScore = Math.max(0, 100 - (violations * 5));
+      console.log('Dashboard Routes: Policy violations:', violations, 'Compliance score:', complianceScore);
     }
 
     const summary = {
       totalBalance: parseFloat(totalBalance.toFixed(2)),
-      balanceChange: 5.2, // This could be calculated by comparing with previous month
+      balanceChange: parseFloat(balanceChange.toFixed(1)),
       monthlySpending: parseFloat(monthlySpending.toFixed(2)),
-      spendingChange: -8.1, // This could be calculated by comparing with previous month
+      spendingChange: parseFloat(spendingChange.toFixed(1)),
       transactionCount,
       complianceScore,
       violations
     };
 
-    console.log('Dashboard Routes: Final summary calculated:', summary);
+    console.log('Dashboard Routes: Final summary object being sent to frontend:', JSON.stringify(summary, null, 2));
+    console.log('Dashboard Routes: Total balance in summary:', summary.totalBalance);
+    console.log('Dashboard Routes: Summary totalBalance type:', typeof summary.totalBalance);
+    console.log('=== DASHBOARD SUMMARY DEBUG END ===');
+    
     res.json(summary);
   } catch (error) {
     console.error('Dashboard Routes: Error getting summary:', error);
+    console.error('Dashboard Routes: Error stack:', error.stack);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -215,7 +303,7 @@ router.get('/dashboard/trends', requireUser, async (req, res) => {
         }
       });
 
-      console.log('Dashboard Routes: Month', monthStart.toLocaleDateString('en-US', { month: 'short' }), 
+      console.log('Dashboard Routes: Month', monthStart.toLocaleDateString('en-US', { month: 'short' }),
                   '- Spending:', spending, 'Income:', income);
 
       trends.push({
@@ -373,10 +461,10 @@ router.get('/dashboard/insights', requireUser, async (req, res) => {
     // Find categories with significant changes
     Object.entries(currentCategorySpending).forEach(([category, currentAmount]) => {
       const lastAmount = lastCategorySpending[category] || 0;
-      
+
       if (lastAmount > 0) {
         const changePercent = ((currentAmount - lastAmount) / lastAmount) * 100;
-        
+
         if (changePercent > 30 && currentAmount > 100) {
           insights.push({
             _id: `category-increase-${category}`,
@@ -450,7 +538,7 @@ router.get('/dashboard/insights', requireUser, async (req, res) => {
     if (insights.length === 0) {
       const totalCurrentSpending = Object.values(currentCategorySpending).reduce((sum, amount) => sum + amount, 0);
       const totalLastSpending = Object.values(lastCategorySpending).reduce((sum, amount) => sum + amount, 0);
-      
+
       if (totalCurrentSpending < totalLastSpending) {
         insights.push({
           _id: 'general-positive',

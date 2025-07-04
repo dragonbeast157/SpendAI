@@ -1,14 +1,9 @@
-import React, { useState, useCallback } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { useState, useCallback } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Upload, FileText, X, CheckCircle, Clock } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle, Clock } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
 
 interface UploadStatementModalProps {
   isOpen: boolean
@@ -16,320 +11,310 @@ interface UploadStatementModalProps {
   onUpload: (file: File) => Promise<void>
 }
 
+type UploadState = 'idle' | 'uploading' | 'processing' | 'success' | 'error'
+
 export function UploadStatementModal({ isOpen, onClose, onUpload }: UploadStatementModalProps) {
-  console.log('UploadStatementModal: Component rendered with isOpen:', isOpen)
-  console.log('UploadStatementModal: This is the UploadStatementModal component used on transactions page!')
-
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
+  const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [uploadStage, setUploadStage] = useState<'uploading' | 'processing' | 'complete'>('uploading')
-  const [dragActive, setDragActive] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState('')
+  const [isDragOver, setIsDragOver] = useState(false)
+  const { toast } = useToast()
 
-  console.log('UploadStatementModal: Current state - uploading:', uploading, 'uploadProgress:', uploadProgress, 'selectedFile:', selectedFile?.name || 'none')
+  const handleFileSelect = (file: File) => {
+    console.log('=== UPLOAD MODAL FILE SELECT ===')
+    console.log('UploadModal: File selected:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    })
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
-    } else if (e.type === "dragleave") {
-      setDragActive(false)
-    }
-  }, [])
+    setSelectedFile(file)
+    setUploadState('idle')
+    setUploadProgress(0)
+    setProcessingMessage('')
+    console.log('=== END UPLOAD MODAL FILE SELECT ===')
+  }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
+    setIsDragOver(false)
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      console.log('UploadStatementModal: File dropped:', e.dataTransfer.files[0].name)
-      setSelectedFile(e.dataTransfer.files[0])
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      const file = files[0]
+      if (isValidFileType(file)) {
+        handleFileSelect(file)
+      } else {
+        toast({
+          title: "Invalid File Type",
+          description: "Please upload a PDF, CSV, or Excel file.",
+          variant: "destructive",
+        })
+      }
     }
-  }, [])
+  }, [toast])
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      console.log('UploadStatementModal: File selected:', e.target.files[0].name)
-      setSelectedFile(e.target.files[0])
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      const file = files[0]
+      if (isValidFileType(file)) {
+        handleFileSelect(file)
+      } else {
+        toast({
+          title: "Invalid File Type",
+          description: "Please upload a PDF, CSV, or Excel file.",
+          variant: "destructive",
+        })
+      }
     }
+  }
+
+  const isValidFileType = (file: File) => {
+    const validTypes = [
+      'application/pdf',
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ]
+    return validTypes.includes(file.type) || 
+           file.name.toLowerCase().endsWith('.csv') ||
+           file.name.toLowerCase().endsWith('.pdf') ||
+           file.name.toLowerCase().endsWith('.xlsx') ||
+           file.name.toLowerCase().endsWith('.xls')
+  }
+
+  const simulateProgress = (duration: number) => {
+    console.log('=== SIMULATING UPLOAD PROGRESS ===')
+    console.log('UploadModal: Starting progress simulation for', duration, 'ms')
+    
+    const steps = 20
+    const interval = duration / steps
+    let currentStep = 0
+
+    const progressInterval = setInterval(() => {
+      currentStep++
+      const progress = Math.min((currentStep / steps) * 90, 90) // Cap at 90% during processing
+      setUploadProgress(progress)
+      
+      // Update processing messages based on progress
+      if (progress < 20) {
+        setProcessingMessage('Uploading file...')
+      } else if (progress < 40) {
+        setProcessingMessage('Analyzing file format...')
+      } else if (progress < 60) {
+        setProcessingMessage('Extracting transactions...')
+      } else if (progress < 80) {
+        setProcessingMessage('Validating data...')
+      } else {
+        setProcessingMessage('Saving transactions...')
+      }
+
+      if (currentStep >= steps) {
+        clearInterval(progressInterval)
+        console.log('UploadModal: Progress simulation completed')
+      }
+    }, interval)
+
+    return () => clearInterval(progressInterval)
   }
 
   const handleUpload = async () => {
-    if (!selectedFile || uploading) {
-      console.log('UploadStatementModal: Upload blocked - no file or already uploading')
-      return
-    }
+    if (!selectedFile) return
+
+    console.log('=== UPLOAD MODAL UPLOAD START ===')
+    console.log('UploadModal: Starting upload process for file:', selectedFile.name)
+    console.log('UploadModal: File size:', selectedFile.size, 'bytes')
 
     try {
-      console.log('UploadStatementModal: Starting upload process')
-      console.log('UploadStatementModal: Setting uploading state to true')
-      setUploading(true)
-      console.log('UploadStatementModal: Setting upload progress to 0')
+      setUploadState('uploading')
       setUploadProgress(0)
-      console.log('UploadStatementModal: Setting upload stage to uploading')
-      setUploadStage('uploading')
+      setProcessingMessage('Preparing upload...')
 
-      console.log('UploadStatementModal: Starting file upload with progress tracking')
-      console.log('UploadStatementModal: File details:', {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        type: selectedFile.type
-      })
+      // Start progress simulation - estimate based on file size
+      const estimatedDuration = Math.max(3000, Math.min(selectedFile.size / 1000, 30000)) // 3-30 seconds
+      console.log('UploadModal: Estimated processing duration:', estimatedDuration, 'ms')
+      
+      const clearProgress = simulateProgress(estimatedDuration)
 
-      // Stage 1: File upload simulation (0-30%)
-      console.log('UploadStatementModal: Starting upload stage (0-30%)')
-      for (let progress = 0; progress <= 30; progress += 5) {
-        setUploadProgress(progress)
-        console.log('UploadStatementModal: Upload progress:', progress + '%')
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-
-      console.log('UploadStatementModal: Upload stage complete, starting processing stage')
-
-      // Stage 2: Processing stage (30-70%) - Start API call here
-      console.log('UploadStatementModal: Setting stage to processing')
-      setUploadStage('processing')
-      console.log('UploadStatementModal: Starting processing stage (30-70%)')
-
-      // Start the actual upload API call and progress simulation in parallel
-      console.log('UploadStatementModal: Calling onUpload function with file:', selectedFile.name)
-      const apiCallPromise = onUpload(selectedFile)
-
-      // Continue progress simulation while API call is happening
-      const progressSimulation = async () => {
-        for (let progress = 30; progress <= 70; progress += 3) {
-          setUploadProgress(progress)
-          console.log('UploadStatementModal: Processing progress:', progress + '%')
-          await new Promise(resolve => setTimeout(resolve, 300))
-        }
-      }
-
-      // Wait for both the API call and progress simulation to complete
-      console.log('UploadStatementModal: Waiting for API call and progress simulation to complete')
-      await Promise.all([apiCallPromise, progressSimulation()])
-
-      console.log('UploadStatementModal: Upload API call completed successfully')
-
-      // Stage 3: Complete (70-100%)
-      console.log('UploadStatementModal: Setting stage to complete')
-      setUploadStage('complete')
-
-      console.log('UploadStatementModal: Upload completed, finishing progress')
-
-      // Final progress completion
-      for (let progress = 70; progress <= 100; progress += 10) {
-        setUploadProgress(progress)
-        console.log('UploadStatementModal: Completion progress:', progress + '%')
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-
-      console.log('UploadStatementModal: Progress completed at 100%')
-
-      // Wait a moment to show completion, then close
-      console.log('UploadStatementModal: Showing completion message for 1.5 seconds before closing')
+      // Set processing state after initial upload
       setTimeout(() => {
-        console.log('UploadStatementModal: Closing modal and resetting state')
-        onClose()
-        resetState()
-      }, 1500)
+        setUploadState('processing')
+        setProcessingMessage('Processing your file... This may take a moment for large files.')
+      }, 1000)
+
+      console.log('UploadModal: Calling onUpload function...')
+      await onUpload(selectedFile)
+
+      // Clear progress simulation
+      clearProgress()
+
+      // Show completion
+      setUploadState('success')
+      setUploadProgress(100)
+      setProcessingMessage('Upload completed successfully!')
+
+      console.log('UploadModal: Upload completed successfully')
+
+      // Auto-close after success
+      setTimeout(() => {
+        handleClose()
+      }, 2000)
 
     } catch (error) {
-      console.error('UploadStatementModal: Upload error:', error)
-      console.log('UploadStatementModal: Error details:', error instanceof Error ? error.message : 'Unknown error')
-      console.log('UploadStatementModal: Resetting states due to error')
-      setUploading(false)
-      setUploadProgress(0)
-      setUploadStage('uploading')
-      // Don't close modal on error so user can retry
+      console.error('=== UPLOAD MODAL ERROR ===')
+      console.error('UploadModal: Upload failed:', error)
+      
+      setUploadState('error')
+      setProcessingMessage('Upload failed. Please try again.')
+      
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload statement",
+        variant: "destructive",
+      })
     }
+    console.log('=== END UPLOAD MODAL UPLOAD ===')
   }
 
-  const resetState = () => {
-    console.log('UploadStatementModal: Resetting state')
+  const handleClose = () => {
+    console.log('UploadModal: Closing modal, resetting state')
     setSelectedFile(null)
+    setUploadState('idle')
     setUploadProgress(0)
-    setUploadStage('uploading')
-    setUploading(false)
+    setProcessingMessage('')
+    setIsDragOver(false)
+    onClose()
   }
 
-  const resetFile = () => {
-    if (!uploading) {
-      console.log('UploadStatementModal: Resetting file selection')
-      resetState()
-    }
-  }
-
-  const getProgressText = () => {
-    const text = (() => {
-      switch (uploadStage) {
-        case 'uploading':
-          return 'Uploading file...'
-        case 'processing':
-          return 'Processing transactions...'
-        case 'complete':
-          return 'Upload completed!'
-        default:
-          return 'Processing...'
-      }
-    })()
-    console.log('UploadStatementModal: Progress text:', text)
-    return text
-  }
-
-  const getProgressIcon = () => {
-    switch (uploadStage) {
+  const getStateIcon = () => {
+    switch (uploadState) {
       case 'uploading':
-        return <Upload className="w-4 h-4" />
       case 'processing':
-        return <Clock className="w-4 h-4" />
-      case 'complete':
-        return <CheckCircle className="w-4 h-4" />
+        return <Clock className="h-8 w-8 text-blue-500 animate-spin" />
+      case 'success':
+        return <CheckCircle className="h-8 w-8 text-green-500" />
+      case 'error':
+        return <AlertCircle className="h-8 w-8 text-red-500" />
       default:
-        return <Upload className="w-4 h-4" />
+        return <Upload className="h-8 w-8 text-gray-400" />
     }
   }
 
-  // Log when modal opens/closes
-  React.useEffect(() => {
-    if (isOpen) {
-      console.log('UploadStatementModal: Modal opened')
-    } else {
-      console.log('UploadStatementModal: Modal closed, resetting state')
-      resetState()
+  const getStateMessage = () => {
+    switch (uploadState) {
+      case 'uploading':
+        return 'Uploading your file...'
+      case 'processing':
+        return 'Processing transactions... Please wait.'
+      case 'success':
+        return 'Upload completed successfully!'
+      case 'error':
+        return 'Upload failed. Please try again.'
+      default:
+        return 'Select a file to upload'
     }
-  }, [isOpen])
+  }
+
+  const isProcessing = uploadState === 'uploading' || uploadState === 'processing'
 
   return (
-    <Dialog open={isOpen} onOpenChange={!uploading ? onClose : undefined}>
-      <DialogContent className="max-w-md bg-white dark:bg-slate-900">
+    <Dialog open={isOpen} onOpenChange={!isProcessing ? handleClose : undefined}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload Bank Statement</DialogTitle>
-          <DialogDescription>
-            Upload a PDF or CSV file of your bank statement to import transactions
-          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {!selectedFile ? (
-            <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500'
-              }`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">
-                {dragActive ? 'Drop your file here' : 'Upload your statement'}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Drag and drop your file here, or click to browse
-              </p>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.csv"
-                onChange={handleFileSelect}
-                className="hidden"
-                id="file-upload"
-                disabled={uploading}
-              />
-              <label htmlFor="file-upload">
-                <Button asChild disabled={uploading}>
-                  <span>Choose File</span>
-                </Button>
-              </label>
-              <p className="text-xs text-muted-foreground mt-2">
-                Supports PDF, CSV, JPG, PNG files up to 1MB
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Selected File */}
-              <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                <FileText className="w-8 h-8 text-blue-600" />
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{selectedFile.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+          {/* File Drop Zone */}
+          <div
+            className={`
+              border-2 border-dashed rounded-lg p-8 text-center transition-colors
+              ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
+              ${isProcessing ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:border-gray-400'}
+            `}
+            onDrop={handleDrop}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setIsDragOver(true)
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onClick={() => !isProcessing && document.getElementById('file-input')?.click()}
+          >
+            <input
+              id="file-input"
+              type="file"
+              accept=".pdf,.csv,.xlsx,.xls"
+              onChange={handleFileInput}
+              className="hidden"
+              disabled={isProcessing}
+            />
+
+            <div className="flex flex-col items-center space-y-2">
+              {getStateIcon()}
+              <p className="text-sm font-medium">{getStateMessage()}</p>
+              
+              {!isProcessing && (
+                <>
+                  <p className="text-xs text-gray-500">
+                    Drag and drop your file here, or click to browse
                   </p>
-                </div>
-                {!uploading && (
-                  <Button variant="ghost" size="sm" onClick={resetFile}>
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-
-              {/* Upload Progress */}
-              {console.log('UploadStatementModal: Checking if progress section should render - uploading:', uploading, 'uploadProgress:', uploadProgress)}
-              {uploading && (
-                <div className="space-y-3">
-                  {console.log('UploadStatementModal: Rendering progress section with uploadProgress:', uploadProgress, 'uploadStage:', uploadStage)}
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      {getProgressIcon()}
-                      <span>{getProgressText()}</span>
-                    </div>
-                    <span className="font-medium">{uploadProgress}%</span>
-                  </div>
-
-                  {console.log('UploadStatementModal: About to render Progress component with value:', uploadProgress)}
-                  <div className="w-full">
-                    <Progress
-                      value={uploadProgress}
-                      className="h-2 w-full bg-gray-200"
-                      style={{
-                        width: '100%',
-                        height: '8px',
-                        backgroundColor: '#e5e7eb',
-                        border: '1px solid #d1d5db'
-                      }}
-                    />
-                    {console.log('UploadStatementModal: Progress component rendered with value:', uploadProgress)}
-                  </div>
-
-                  {uploadStage === 'processing' && (
-                    <div className="text-xs text-muted-foreground text-center">
-                      This may take a moment for large files...
-                    </div>
-                  )}
-
-                  {uploadProgress === 100 && uploadStage === 'complete' && (
-                    <div className="flex items-center justify-center gap-2 text-green-600">
-                      <CheckCircle className="w-4 h-4" />
-                      <span className="text-sm font-medium">Statement uploaded successfully!</span>
-                    </div>
-                  )}
-                </div>
+                  <p className="text-xs text-gray-400">
+                    Supports PDF, CSV, and Excel files
+                  </p>
+                </>
               )}
+            </div>
+          </div>
 
-              {/* Upload Button */}
-              {!uploading && (
-                <Button onClick={handleUpload} className="w-full" disabled={uploading}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Statement
-                </Button>
+          {/* Selected File Info */}
+          {selectedFile && (
+            <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+              <FileText className="h-5 w-5 text-gray-500" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{selectedFile.name}</p>
+                <p className="text-xs text-gray-500">
+                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Progress Bar */}
+          {isProcessing && (
+            <div className="space-y-2">
+              <Progress value={uploadProgress} className="w-full" />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>{processingMessage}</span>
+                <span>{Math.round(uploadProgress)}%</span>
+              </div>
+              {uploadState === 'processing' && (
+                <p className="text-xs text-amber-600 text-center">
+                  Large files may take up to 30 seconds to process. Please don't close this window.
+                </p>
               )}
             </div>
           )}
 
-          {/* Information */}
-          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <h4 className="font-medium text-sm text-blue-800 dark:text-blue-200 mb-1">
-              What happens next?
-            </h4>
-            <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-              <li>• Your statement will be uploaded securely</li>
-              <li>• Transactions will be extracted and categorized automatically</li>
-              <li>• You'll be able to review the imported data in your transactions</li>
-              <li>• Large files may take longer to process</li>
-            </ul>
+          {/* Action Buttons */}
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleClose}
+              disabled={isProcessing}
+            >
+              {uploadState === 'success' ? 'Close' : 'Cancel'}
+            </Button>
+            
+            {uploadState !== 'success' && (
+              <Button
+                onClick={handleUpload}
+                disabled={!selectedFile || isProcessing}
+              >
+                {isProcessing ? 'Processing...' : 'Upload'}
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>
