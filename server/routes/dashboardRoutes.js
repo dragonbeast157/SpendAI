@@ -90,17 +90,93 @@ router.get('/dashboard/summary', requireUser, async (req, res) => {
   }
 });
 
-// Get spending weather
+// Get spending weather - UPDATED WITH REAL LOGIC
 router.get('/dashboard/weather', requireUser, async (req, res) => {
   try {
     console.log('Dashboard Routes: Getting weather for user:', req.user._id);
 
-    const weather = {
-      status: 'sunny',
-      message: 'Your spending is on track this month!',
-      recommendation: 'Keep up the good work with your budgeting.'
-    };
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
+    // Get current month transactions
+    const currentMonthTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false,
+      date: { $gte: startOfMonth }
+    });
+
+    // Get last month transactions for comparison
+    const lastMonthTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false,
+      date: { $gte: startOfLastMonth, $lte: endOfLastMonth }
+    });
+
+    const currentSpending = currentMonthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const lastMonthSpending = lastMonthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    // Calculate spending velocity (how fast we're spending compared to last month)
+    const daysIntoMonth = now.getDate();
+    const projectedMonthlySpending = (currentSpending / daysIntoMonth) * 30;
+    const spendingIncrease = lastMonthSpending > 0 ? ((projectedMonthlySpending - lastMonthSpending) / lastMonthSpending) * 100 : 0;
+
+    // Check for anomalies and policy violations
+    const anomalies = currentMonthTransactions.filter(t => t.hasAnomaly).length;
+    const violations = currentMonthTransactions.filter(t => t.policyStatus === 'violation').length;
+
+    console.log('Dashboard Routes: Weather analysis:', {
+      currentSpending,
+      lastMonthSpending,
+      projectedMonthlySpending,
+      spendingIncrease,
+      anomalies,
+      violations,
+      daysIntoMonth
+    });
+
+    let status = 'sunny';
+    let message = '';
+    let recommendation = '';
+
+    // Determine weather status based on multiple factors
+    if (violations > 3 || anomalies > 5 || spendingIncrease > 50) {
+      status = 'stormy';
+      message = 'Storm warning - significant spending concerns detected';
+      if (violations > 3) {
+        recommendation = `You have ${violations} policy violations this month. Review your spending against company policies.`;
+      } else if (spendingIncrease > 50) {
+        recommendation = `Your spending is ${spendingIncrease.toFixed(1)}% higher than last month. Consider reducing discretionary expenses.`;
+      } else {
+        recommendation = `${anomalies} unusual transactions detected. Review your recent purchases for accuracy.`;
+      }
+    } else if (violations > 0 || anomalies > 2 || (spendingIncrease > 20 && spendingIncrease <= 50)) {
+      status = 'cloudy';
+      message = 'Partly cloudy - some areas need attention';
+      if (violations > 0) {
+        recommendation = `${violations} policy violations need review. Check flagged transactions.`;
+      } else if (spendingIncrease > 20) {
+        recommendation = `Spending is up ${spendingIncrease.toFixed(1)}% from last month. Monitor your budget closely.`;
+      } else {
+        recommendation = `${anomalies} transactions flagged as unusual. Review if needed.`;
+      }
+    } else {
+      status = 'sunny';
+      if (spendingIncrease < -10) {
+        message = 'Sunny skies - great job reducing your spending!';
+        recommendation = `You're spending ${Math.abs(spendingIncrease).toFixed(1)}% less than last month. Keep up the good work!`;
+      } else if (spendingIncrease < 10) {
+        message = 'Sunny skies - your spending is well controlled';
+        recommendation = 'Your spending patterns look healthy. Continue monitoring your budget.';
+      } else {
+        message = 'Mostly sunny - spending is within normal range';
+        recommendation = 'Your spending is slightly up but still manageable. Stay mindful of your budget.';
+      }
+    }
+
+    const weather = { status, message, recommendation };
+    console.log('Dashboard Routes: Weather result:', weather);
     res.json(weather);
   } catch (error) {
     console.error('Dashboard Routes: Error getting weather:', error);
@@ -108,7 +184,7 @@ router.get('/dashboard/weather', requireUser, async (req, res) => {
   }
 });
 
-// Get spending trends - UPDATED TO USE REAL DATA
+// Get spending trends - UPDATED TO USE REAL INCOME DATA
 router.get('/dashboard/trends', requireUser, async (req, res) => {
   try {
     console.log('Dashboard Routes: Getting trends for user:', req.user._id);
@@ -127,17 +203,29 @@ router.get('/dashboard/trends', requireUser, async (req, res) => {
         date: { $gte: monthStart, $lte: monthEnd }
       });
 
-      const spending = monthTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-      const income = 4500; // Mock income data - would come from income transactions or external source
+      // Calculate actual spending (negative amounts) and income (positive amounts)
+      let spending = 0;
+      let income = 0;
+
+      monthTransactions.forEach(transaction => {
+        if (transaction.amount < 0) {
+          spending += Math.abs(transaction.amount);
+        } else {
+          income += transaction.amount;
+        }
+      });
+
+      console.log('Dashboard Routes: Month', monthStart.toLocaleDateString('en-US', { month: 'short' }), 
+                  '- Spending:', spending, 'Income:', income);
 
       trends.push({
         month: monthStart.toLocaleDateString('en-US', { month: 'short' }),
         spending: parseFloat(spending.toFixed(2)),
-        income: income
+        income: parseFloat(income.toFixed(2))
       });
     }
 
-    console.log('Dashboard Routes: Calculated trends:', trends);
+    console.log('Dashboard Routes: Calculated trends with real data:', trends);
     res.json(trends);
   } catch (error) {
     console.error('Dashboard Routes: Error getting trends:', error);
@@ -239,38 +327,156 @@ router.get('/dashboard/transactions', requireUser, async (req, res) => {
   }
 });
 
-// Get insights
+// Get insights - UPDATED WITH REAL DATA ANALYSIS
 router.get('/dashboard/insights', requireUser, async (req, res) => {
   try {
     console.log('Dashboard Routes: Getting insights for user:', req.user._id);
 
-    const insights = [
-      {
-        type: 'spending',
-        title: 'Dining spending up 40% this month',
-        description: 'You\'ve spent $650 on dining, which is higher than usual.',
-        action: 'Consider cooking at home more often',
-        priority: 'medium'
-      },
-      {
-        type: 'savings',
-        title: 'Great job staying under budget!',
-        description: 'You\'re under budget in 4 categories this month.',
-        action: 'Keep up the good work',
-        priority: 'low'
-      }
-    ];
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    if (req.user.accountType === 'business') {
+    // Get current and last month transactions
+    const currentMonthTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false,
+      date: { $gte: startOfMonth }
+    });
+
+    const lastMonthTransactions = await Transaction.find({
+      userId: req.user._id,
+      isDeleted: false,
+      date: { $gte: startOfLastMonth, $lte: endOfLastMonth }
+    });
+
+    console.log('Dashboard Routes: Analyzing insights from', currentMonthTransactions.length, 'current and', lastMonthTransactions.length, 'last month transactions');
+
+    const insights = [];
+
+    // Analyze spending by category
+    const currentCategorySpending = {};
+    const lastCategorySpending = {};
+
+    currentMonthTransactions.forEach(t => {
+      const category = t.category || 'other';
+      const amount = Math.abs(t.amount);
+      currentCategorySpending[category] = (currentCategorySpending[category] || 0) + amount;
+    });
+
+    lastMonthTransactions.forEach(t => {
+      const category = t.category || 'other';
+      const amount = Math.abs(t.amount);
+      lastCategorySpending[category] = (lastCategorySpending[category] || 0) + amount;
+    });
+
+    // Find categories with significant changes
+    Object.entries(currentCategorySpending).forEach(([category, currentAmount]) => {
+      const lastAmount = lastCategorySpending[category] || 0;
+      
+      if (lastAmount > 0) {
+        const changePercent = ((currentAmount - lastAmount) / lastAmount) * 100;
+        
+        if (changePercent > 30 && currentAmount > 100) {
+          insights.push({
+            _id: `category-increase-${category}`,
+            type: 'spending',
+            title: `${category.charAt(0).toUpperCase() + category.slice(1)} spending up ${changePercent.toFixed(0)}%`,
+            description: `You've spent $${currentAmount.toFixed(2)} on ${category} this month, up from $${lastAmount.toFixed(2)} last month.`,
+            action: `Consider reviewing your ${category} expenses`,
+            priority: changePercent > 50 ? 'high' : 'medium'
+          });
+        } else if (changePercent < -20 && lastAmount > 50) {
+          insights.push({
+            _id: `category-decrease-${category}`,
+            type: 'saving',
+            title: `Great job reducing ${category} spending!`,
+            description: `You've saved $${(lastAmount - currentAmount).toFixed(2)} on ${category} compared to last month.`,
+            action: 'Keep up the good work',
+            priority: 'low'
+          });
+        }
+      } else if (currentAmount > 100) {
+        insights.push({
+          _id: `new-category-${category}`,
+          type: 'spending',
+          title: `New spending in ${category}`,
+          description: `You've started spending in ${category} category with $${currentAmount.toFixed(2)} this month.`,
+          action: `Monitor your ${category} budget`,
+          priority: 'medium'
+        });
+      }
+    });
+
+    // Check for anomalies
+    const anomalies = currentMonthTransactions.filter(t => t.hasAnomaly);
+    if (anomalies.length > 0) {
+      const totalAnomalyAmount = anomalies.reduce((sum, t) => sum + Math.abs(t.amount), 0);
       insights.push({
-        type: 'policy',
-        title: '3 transactions need policy review',
-        description: 'Some recent transactions may exceed policy limits.',
+        _id: 'anomalies-detected',
+        type: 'spending',
+        title: `${anomalies.length} unusual transactions detected`,
+        description: `Transactions worth $${totalAnomalyAmount.toFixed(2)} have been flagged as unusual.`,
         action: 'Review flagged transactions',
-        priority: 'high'
+        priority: anomalies.length > 3 ? 'high' : 'medium'
       });
     }
 
+    // Business account specific insights
+    if (req.user.accountType === 'business') {
+      const violations = currentMonthTransactions.filter(t => t.policyStatus === 'violation');
+      if (violations.length > 0) {
+        insights.push({
+          _id: 'policy-violations',
+          type: 'policy',
+          title: `${violations.length} policy violations need attention`,
+          description: 'Some transactions may not comply with company spending policies.',
+          action: 'Review and justify flagged transactions',
+          priority: violations.length > 2 ? 'high' : 'medium'
+        });
+      } else {
+        insights.push({
+          _id: 'policy-compliant',
+          type: 'goal',
+          title: 'All transactions are policy compliant!',
+          description: 'Great job following company spending guidelines.',
+          action: 'Keep maintaining compliance',
+          priority: 'low'
+        });
+      }
+    }
+
+    // If no specific insights, add general positive message
+    if (insights.length === 0) {
+      const totalCurrentSpending = Object.values(currentCategorySpending).reduce((sum, amount) => sum + amount, 0);
+      const totalLastSpending = Object.values(lastCategorySpending).reduce((sum, amount) => sum + amount, 0);
+      
+      if (totalCurrentSpending < totalLastSpending) {
+        insights.push({
+          _id: 'general-positive',
+          type: 'saving',
+          title: 'Your spending is under control',
+          description: `You're spending less than last month. Keep up the good financial habits!`,
+          action: 'Continue monitoring your budget',
+          priority: 'low'
+        });
+      } else {
+        insights.push({
+          _id: 'general-neutral',
+          type: 'goal',
+          title: 'Your finances look stable',
+          description: 'No major changes in your spending patterns detected.',
+          action: 'Keep tracking your expenses',
+          priority: 'low'
+        });
+      }
+    }
+
+    // Sort insights by priority
+    const priorityOrder = { high: 3, medium: 2, low: 1 };
+    insights.sort((a, b) => priorityOrder[b.priority] - priorityOrder[a.priority]);
+
+    console.log('Dashboard Routes: Generated', insights.length, 'insights');
     res.json(insights);
   } catch (error) {
     console.error('Dashboard Routes: Error getting insights:', error);

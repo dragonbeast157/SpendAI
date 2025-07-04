@@ -6,26 +6,49 @@ import api from './api';
 // Response: { transactions: Array<Transaction>, pagination: { page: number, limit: number, total: number, pages: number, hasMore: boolean } }
 export const getTransactions = async (filters = {}) => {
   try {
+    console.log('=== API TRANSACTIONS DEBUG ENHANCED START ===');
     console.log('API: getTransactions called with filters:', filters);
-    
+    console.log('API: searchTerm in filters:', filters.searchTerm);
+    console.log('API: search in filters:', filters.search);
+    console.log('API: searchTerm type:', typeof filters.searchTerm);
+    console.log('API: searchTerm length:', filters.searchTerm?.length);
+
     const params = new URLSearchParams();
+    console.log('API: Building URL parameters...');
+
     Object.entries(filters).forEach(([key, value]) => {
+      console.log(`API: Processing filter ${key} = "${value}" (type: ${typeof value})`);
       if (value !== undefined && value !== '' && value !== false) {
+        console.log(`API: Adding param ${key} = "${value}"`);
         params.append(key, value.toString());
+      } else {
+        console.log(`API: Skipping param ${key} = "${value}" (filtered out)`);
       }
     });
 
-    console.log('API: Making request to /api/transactions with params:', params.toString());
-    const response = await api.get(`/api/transactions?${params.toString()}`);
-    
-    console.log('API: getTransactions response received:', {
-      transactionCount: response.data.transactions?.length,
-      pagination: response.data.pagination
-    });
-    
+    const finalUrl = `/api/transactions?${params.toString()}`;
+    console.log('API: Final request URL:', finalUrl);
+    console.log('API: Params string:', params.toString());
+    console.log('API: URL contains searchTerm?', finalUrl.includes('searchTerm'));
+    console.log('API: URL contains search?', finalUrl.includes('search'));
+    console.log('API: Making HTTP GET request...');
+
+    const response = await api.get(finalUrl);
+
+    console.log('API: HTTP response received');
+    console.log('API: Response status:', response.status);
+    console.log('API: Response data keys:', Object.keys(response.data));
+    console.log('API: Transactions count:', response.data.transactions?.length);
+    console.log('API: First transaction:', response.data.transactions?.[0]);
+    console.log('=== API TRANSACTIONS DEBUG ENHANCED END ===');
+
     return response.data;
   } catch (error: any) {
+    console.error('=== API TRANSACTIONS ERROR ===');
     console.error('API: getTransactions error:', error);
+    console.error('API: Error response:', error.response);
+    console.error('API: Error response data:', error.response?.data);
+    console.error('=== END API TRANSACTIONS ERROR ===');
     throw new Error(error?.response?.data?.message || error.message);
   }
 };

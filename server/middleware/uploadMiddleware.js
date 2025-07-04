@@ -37,8 +37,14 @@ const storage = multer.diskStorage({
 
 // File filter function
 const fileFilter = (req, file, cb) => {
-  console.log('Backend: File filter - checking file:', file.originalname, file.mimetype);
-  
+  console.log('=== UPLOAD MIDDLEWARE FILE FILTER START ===');
+  console.log('Backend: File filter - checking file:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    fieldname: file.fieldname,
+    encoding: file.encoding
+  });
+
   // Allow common document and image formats
   const allowedTypes = [
     'application/pdf',
@@ -52,11 +58,16 @@ const fileFilter = (req, file, cb) => {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   ];
 
+  console.log('Backend: Allowed file types:', allowedTypes);
+  console.log('Backend: File mimetype matches allowed:', allowedTypes.includes(file.mimetype));
+
   if (allowedTypes.includes(file.mimetype)) {
     console.log('Backend: File type accepted');
+    console.log('=== UPLOAD MIDDLEWARE FILE FILTER SUCCESS ===');
     cb(null, true);
   } else {
     console.log('Backend: File type rejected:', file.mimetype);
+    console.log('=== UPLOAD MIDDLEWARE FILE FILTER REJECTED ===');
     cb(new Error('Invalid file type. Only PDF, CSV, Excel, Word documents and images are allowed.'), false);
   }
 };

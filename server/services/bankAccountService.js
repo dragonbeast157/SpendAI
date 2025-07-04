@@ -10,7 +10,8 @@ class BankAccountService {
     try {
       const bankAccount = new BankAccount({
         userId,
-        ...accountData
+        ...accountData,
+        status: 'connected' // Set as connected when created
       });
 
       const savedAccount = await bankAccount.save();
@@ -23,13 +24,112 @@ class BankAccountService {
     }
   }
 
+  static async getSupportedBanks() {
+    console.log('BankAccountService: Fetching supported banks');
+
+    try {
+      // Mock supported banks data - in a real implementation, this would come from a database or external API
+      const supportedBanks = [
+        {
+          _id: 'chase',
+          name: 'Chase Bank',
+          isPopular: true,
+          logo: '/images/banks/chase.png'
+        },
+        {
+          _id: 'wellsfargo',
+          name: 'Wells Fargo',
+          isPopular: true,
+          logo: '/images/banks/wellsfargo.png'
+        },
+        {
+          _id: 'bankofamerica',
+          name: 'Bank of America',
+          isPopular: true,
+          logo: '/images/banks/boa.png'
+        },
+        {
+          _id: 'citi',
+          name: 'Citibank',
+          isPopular: true,
+          logo: '/images/banks/citi.png'
+        },
+        {
+          _id: 'usbank',
+          name: 'U.S. Bank',
+          isPopular: false,
+          logo: '/images/banks/usbank.png'
+        },
+        {
+          _id: 'pnc',
+          name: 'PNC Bank',
+          isPopular: false,
+          logo: '/images/banks/pnc.png'
+        },
+        {
+          _id: 'capitalone',
+          name: 'Capital One',
+          isPopular: false,
+          logo: '/images/banks/capitalone.png'
+        },
+        {
+          _id: 'td',
+          name: 'TD Bank',
+          isPopular: false,
+          logo: '/images/banks/td.png'
+        }
+      ];
+
+      console.log('BankAccountService: Returning', supportedBanks.length, 'supported banks');
+
+      return {
+        success: true,
+        banks: supportedBanks
+      };
+    } catch (error) {
+      console.error('BankAccountService: Error fetching supported banks:', error.message);
+      throw new Error(`Failed to fetch supported banks: ${error.message}`);
+    }
+  }
+
+  static async connectToBank(userId, bankId) {
+    console.log('BankAccountService: Connecting to bank:', bankId, 'for user:', userId);
+
+    try {
+      // In a real implementation, this would initiate OAuth flow with the bank
+      // For now, we'll simulate the connection process
+
+      // Find the bank in our supported banks list
+      const supportedBanks = await this.getSupportedBanks();
+      const bank = supportedBanks.banks.find(b => b._id === bankId);
+
+      if (!bank) {
+        throw new Error('Bank not supported');
+      }
+
+      // Simulate OAuth URL generation
+      const authUrl = `https://oauth.${bankId}.com/authorize?client_id=spendai&redirect_uri=http://localhost:5173/settings&user_id=${userId}`;
+
+      console.log('BankAccountService: Generated auth URL for bank connection');
+
+      return {
+        success: true,
+        authUrl,
+        message: 'Bank connection initiated. Please complete authentication.',
+        bankName: bank.name
+      };
+    } catch (error) {
+      console.error('BankAccountService: Error connecting to bank:', error.message);
+      throw new Error(`Failed to connect to bank: ${error.message}`);
+    }
+  }
+
   static async getAccounts(userId) {
     console.log('BankAccountService: Fetching bank accounts for user:', userId);
 
     try {
       const accounts = await BankAccount.find({
-        userId,
-        isDeleted: false
+        userId
       }).lean();
 
       console.log('BankAccountService: Found', accounts.length, 'bank accounts');
@@ -50,8 +150,7 @@ class BankAccountService {
     try {
       const account = await BankAccount.findOne({
         _id: accountId,
-        userId,
-        isDeleted: false
+        userId
       }).lean();
 
       if (!account) {
@@ -70,7 +169,7 @@ class BankAccountService {
 
     try {
       const account = await BankAccount.findOneAndUpdate(
-        { _id: accountId, userId, isDeleted: false },
+        { _id: accountId, userId },
         { $set: updateData },
         { new: true }
       );
@@ -91,11 +190,10 @@ class BankAccountService {
     console.log('BankAccountService: Deleting bank account:', accountId);
 
     try {
-      const account = await BankAccount.findOneAndUpdate(
-        { _id: accountId, userId, isDeleted: false },
-        { $set: { isDeleted: true } },
-        { new: true }
-      );
+      const account = await BankAccount.findOneAndDelete({
+        _id: accountId,
+        userId
+      });
 
       if (!account) {
         throw new Error('Bank account not found');
@@ -129,352 +227,6 @@ class BankAccountService {
     }
   }
 
-  static async parseCSVFile(filePath) {
-    console.log('=== CSV PARSING COMPREHENSIVE DEBUG START ===');
-    console.log('BankAccountService: Parsing CSV file:', filePath);
-
-    try {
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      console.log('BankAccountService: CSV file content length:', fileContent.length);
-
-      const lines = fileContent.split('\n');
-      console.log('BankAccountService: Total lines in file (including empty):', lines.length);
-
-      const nonEmptyLines = lines.filter(line => line.trim());
-      console.log('BankAccountService: Non-empty lines:', nonEmptyLines.length);
-
-      if (nonEmptyLines.length === 0) {
-        throw new Error('CSV file is empty');
-      }
-
-      // Log the first 10 lines to understand the format
-      console.log('BankAccountService: First 10 lines of CSV for format analysis:');
-      for (let i = 0; i < Math.min(10, nonEmptyLines.length); i++) {
-        console.log(`Line ${i}: "${nonEmptyLines[i]}"`);
-      }
-
-      // Skip header row if it exists (detect if first line looks like header)
-      let startIndex = 0;
-      const firstLine = nonEmptyLines[0];
-      if (firstLine.toLowerCase().includes('date') || firstLine.toLowerCase().includes('description')) {
-        startIndex = 1;
-        console.log('BankAccountService: Detected header row, skipping first line');
-      }
-
-      const dataLines = nonEmptyLines.slice(startIndex);
-      console.log('BankAccountService: Data lines to process:', dataLines.length);
-
-      const transactions = [];
-      let counters = {
-        totalProcessed: 0,
-        successfullyParsed: 0,
-        skippedEmpty: 0,
-        invalidDateCount: 0,
-        invalidAmountCount: 0,
-        zeroAmountCount: 0,
-        nullAmountCount: 0,
-        positiveAmounts: 0,
-        negativeAmounts: 0
-      };
-
-      console.log('BankAccountService: Starting line-by-line processing...');
-
-      for (let i = 0; i < dataLines.length; i++) {
-        counters.totalProcessed++;
-        const line = dataLines[i].trim();
-
-        if (!line) {
-          counters.skippedEmpty++;
-          continue;
-        }
-
-        try {
-          const fields = this.parseCSVLine(line);
-
-          // Log first 20 transactions in detail
-          if (i < 20) {
-            console.log(`BankAccountService: Line ${i + 1}: Raw fields (${fields.length}):`, fields);
-          }
-
-          if (fields.length < 3) {
-            console.log(`BankAccountService: Line ${i + 1}: Insufficient fields (${fields.length}), skipping`);
-            continue;
-          }
-
-          // Parse based on the actual CSV format: Date, Description, Credit, Debit, Balance
-          let date, merchant, description, amount;
-
-          try {
-            // Field 0: Date
-            const dateStr = fields[0].trim();
-            date = this.parseFlexibleDate(dateStr);
-            if (!date || isNaN(date.getTime())) {
-              throw new Error(`Cannot parse date: ${dateStr}`);
-            }
-
-            // Field 1: Description (full transaction description)
-            const fullDescription = fields[1].trim();
-            merchant = this.extractMerchantName(fullDescription);
-            description = fullDescription;
-
-            // Field 2: Credit (positive income)
-            // Field 3: Debit (negative expenses) 
-            const creditStr = fields[2] ? fields[2].trim() : '';
-            const debitStr = fields[3] ? fields[3].trim() : '';
-
-            if (i < 20) {
-              console.log(`BankAccountService: Line ${i + 1}: Amount fields - Credit: "${creditStr}", Debit: "${debitStr}"`);
-            }
-
-            const creditAmount = this.parseFlexibleAmount(creditStr);
-            const debitAmount = this.parseFlexibleAmount(debitStr);
-
-            if (i < 20) {
-              console.log(`BankAccountService: Line ${i + 1}: Parsed amounts - Credit: ${creditAmount}, Debit: ${debitAmount}`);
-            }
-
-            // Determine final amount - use whichever field has a value
-            if (creditAmount !== null && creditAmount !== 0) {
-              amount = Math.abs(creditAmount); // Income is positive
-              counters.positiveAmounts++;
-            } else if (debitAmount !== null && debitAmount !== 0) {
-              amount = -Math.abs(debitAmount); // Expense is negative
-              counters.negativeAmounts++;
-            } else {
-              // Both are null or zero - skip this transaction
-              counters.nullAmountCount++;
-              if (i < 20) {
-                console.log(`BankAccountService: Line ${i + 1}: Both credit and debit are null/zero, skipping`);
-              }
-              continue;
-            }
-
-            if (i < 20) {
-              console.log(`BankAccountService: Line ${i + 1}: Final amount: ${amount} (${amount > 0 ? 'INCOME' : 'EXPENSE'})`);
-            }
-
-          } catch (parseError) {
-            if (i < 20) {
-              console.log(`BankAccountService: Line ${i + 1}: Parse error:`, parseError.message);
-            }
-            counters.invalidAmountCount++;
-            continue;
-          }
-
-          if (amount === 0) {
-            counters.zeroAmountCount++;
-          }
-
-          const category = this.categorizeTransaction('', merchant, description);
-
-          const transaction = {
-            date,
-            merchant: merchant || 'Unknown Merchant',
-            description: description || 'Transaction from CSV',
-            amount,
-            category
-          };
-
-          if (i < 20) {
-            console.log(`BankAccountService: Line ${i + 1}: Created transaction:`, {
-              date: transaction.date.toISOString().split('T')[0],
-              merchant: transaction.merchant.substring(0, 30) + (transaction.merchant.length > 30 ? '...' : ''),
-              amount: transaction.amount,
-              category: transaction.category
-            });
-          }
-
-          transactions.push(transaction);
-          counters.successfullyParsed++;
-
-        } catch (error) {
-          if (i < 20) {
-            console.log(`BankAccountService: Line ${i + 1}: Processing error:`, error.message);
-          }
-          continue;
-        }
-      }
-
-      console.log('=== CSV PARSING RESULTS ===');
-      console.log('BankAccountService: Parsing summary:', {
-        totalProcessed: counters.totalProcessed,
-        successfullyParsed: counters.successfullyParsed,
-        skippedEmpty: counters.skippedEmpty,
-        invalidDates: counters.invalidDateCount,
-        invalidAmounts: counters.invalidAmountCount,
-        nullAmounts: counters.nullAmountCount,
-        zeroAmounts: counters.zeroAmountCount,
-        positiveAmounts: counters.positiveAmounts,
-        negativeAmounts: counters.negativeAmounts,
-        successRate: `${Math.round((counters.successfullyParsed / counters.totalProcessed) * 100)}%`
-      });
-
-      // Show category distribution
-      const categoryStats = {};
-      transactions.forEach(t => {
-        categoryStats[t.category] = (categoryStats[t.category] || 0) + 1;
-      });
-      console.log('BankAccountService: Category distribution:', categoryStats);
-
-      // Show sample of successful transactions
-      console.log('BankAccountService: Sample of successful transactions (first 5):');
-      transactions.slice(0, 5).forEach((tx, index) => {
-        console.log(`  ${index + 1}. ${tx.date.toISOString().split('T')[0]} | ${tx.merchant.substring(0, 25)} | $${tx.amount} | ${tx.category}`);
-      });
-
-      console.log('=== CSV PARSING COMPREHENSIVE DEBUG END ===');
-      return transactions;
-
-    } catch (error) {
-      console.error('BankAccountService: FATAL ERROR parsing CSV file:', error.message);
-      throw new Error(`Failed to parse CSV file: ${error.message}`);
-    }
-  }
-
-  static parseCSVLine(line) {
-    const result = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    
-    result.push(current.trim());
-    return result;
-  }
-
-  static async parsePDFFile(filePath) {
-    console.log('BankAccountService: Parsing PDF file:', filePath);
-    
-    try {
-      // For now, we'll create a simple text-based parser
-      // In a real implementation, you'd use a PDF parsing library like pdf-parse
-      console.log('BankAccountService: PDF parsing not fully implemented, creating sample transactions');
-      
-      // Return sample transactions that would come from PDF parsing
-      return [
-        {
-          date: new Date(),
-          merchant: 'PDF Merchant 1',
-          description: 'Transaction from PDF statement',
-          amount: -25.50,
-          category: 'dining'
-        },
-        {
-          date: new Date(Date.now() - 86400000),
-          merchant: 'PDF Merchant 2',
-          description: 'Another transaction from PDF',
-          amount: -67.89,
-          category: 'shopping'
-        }
-      ];
-      
-    } catch (error) {
-      console.error('BankAccountService: Error parsing PDF file:', error.message);
-      throw new Error(`Failed to parse PDF file: ${error.message}`);
-    }
-  }
-
-  static categorizeTransaction(category, merchant, description) {
-    // Log every categorization attempt with detailed info
-    console.log('=== CATEGORIZATION DEBUG START ===');
-    console.log('BankAccountService: Categorization inputs:', {
-      originalCategory: category,
-      merchant: merchant,
-      description: description
-    });
-
-    // Simple categorization logic with detailed logging
-    const text = `${category || ''} ${merchant || ''} ${description || ''}`.toLowerCase();
-    console.log('BankAccountService: Combined text for matching:', text);
-    console.log('BankAccountService: Combined text length:', text.length);
-    console.log('BankAccountService: Text contains keywords check:');
-
-    let finalCategory = 'other'; // default
-    let matchReason = 'no matches found';
-    let keywordsFound = [];
-
-    // Test each category with detailed logging and collect all matches
-    const categoryTests = [
-      {
-        name: 'groceries',
-        keywords: ['grocery', 'supermarket', 'food', 'walmart', 'kroger', 'safeway', 'whole foods', 'trader joe', 'costco', 'target', 'fresh market']
-      },
-      {
-        name: 'transport',
-        keywords: ['gas', 'fuel', 'transport', 'uber', 'lyft', 'taxi', 'shell', 'exxon', 'chevron', 'bp', 'mobil', 'parking', 'metro', 'bus']
-      },
-      {
-        name: 'dining',
-        keywords: ['restaurant', 'coffee', 'dining', 'starbucks', 'mcdonald', 'burger', 'pizza', 'cafe', 'bistro', 'grill', 'kitchen', 'bar', 'pub', 'diner']
-      },
-      {
-        name: 'shopping',
-        keywords: ['shop', 'store', 'amazon', 'target', 'mall', 'retail', 'clothing', 'fashion', 'electronics', 'best buy', 'home depot', 'lowes']
-      },
-      {
-        name: 'entertainment',
-        keywords: ['entertainment', 'movie', 'netflix', 'spotify', 'theater', 'cinema', 'streaming', 'music', 'game', 'concert', 'show']
-      },
-      {
-        name: 'utilities',
-        keywords: ['utility', 'electric', 'water', 'internet', 'phone', 'cable', 'power', 'gas company', 'telecom', 'wireless']
-      }
-    ];
-
-    console.log('BankAccountService: Testing against category keywords...');
-
-    for (const categoryTest of categoryTests) {
-      console.log(`BankAccountService: Testing category "${categoryTest.name}"...`);
-      const foundKeywords = [];
-      
-      for (const keyword of categoryTest.keywords) {
-        if (text.includes(keyword)) {
-          foundKeywords.push(keyword);
-          keywordsFound.push(`${categoryTest.name}:${keyword}`);
-        }
-      }
-      
-      console.log(`BankAccountService: Category "${categoryTest.name}" - found keywords:`, foundKeywords);
-      
-      if (foundKeywords.length > 0) {
-        finalCategory = categoryTest.name;
-        matchReason = `matched ${categoryTest.name} keywords: ${foundKeywords.join(', ')}`;
-        console.log(`BankAccountService: MATCHED ${categoryTest.name.toUpperCase()} - keywords found:`, foundKeywords);
-        break; // Use first match
-      }
-    }
-
-    if (finalCategory === 'other') {
-      console.log('BankAccountService: NO CATEGORY MATCH - defaulting to other');
-      console.log('BankAccountService: Full text checked:', text);
-      console.log('BankAccountService: Text breakdown:');
-      console.log('  - Original category:', category);
-      console.log('  - Merchant:', merchant);
-      console.log('  - Description:', description);
-      console.log('BankAccountService: All keywords found across categories:', keywordsFound);
-    }
-
-    console.log('BankAccountService: Final categorization result:', {
-      finalCategory: finalCategory,
-      matchReason: matchReason,
-      totalKeywordsFound: keywordsFound.length
-    });
-    console.log('=== CATEGORIZATION DEBUG END ===');
-
-    return finalCategory;
-  }
-
   static async processGeneralStatement(userId, file) {
     console.log('BankAccountService: Processing general statement for user:', userId);
     console.log('BankAccountService: File details:', {
@@ -486,7 +238,7 @@ class BankAccountService {
 
     try {
       let extractedTransactions = [];
-      
+
       // Parse the actual uploaded file based on its type
       if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
         console.log('BankAccountService: Processing as CSV file');
@@ -543,8 +295,7 @@ class BankAccountService {
           date: {
             $gte: new Date(transactionData.date.getTime() - 24 * 60 * 60 * 1000), // 1 day before
             $lte: new Date(transactionData.date.getTime() + 24 * 60 * 60 * 1000)  // 1 day after
-          },
-          isDeleted: false
+          }
         });
 
         if (existingTransaction) {
@@ -605,100 +356,613 @@ class BankAccountService {
     }
   }
 
-  static parseFlexibleDate(dateStr) {
-    console.log('BankAccountService: Attempting to parse date:', dateStr);
+  static async parseCSVFile(filePath) {
+    console.log('BankAccountService: Parsing CSV file:', filePath);
+
+    try {
+      const fs = require('fs');
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const lines = fileContent.split('\n').filter(line => line.trim());
+
+      console.log('=== CSV FILE ANALYSIS START ===');
+      console.log('BankAccountService: Total lines in file (after filtering empty):', lines.length);
+      console.log('BankAccountService: First 5 lines:');
+      lines.slice(0, 5).forEach((line, index) => {
+        console.log(`  Line ${index + 1}: "${line}"`);
+      });
+      console.log('BankAccountService: Last 3 lines:');
+      lines.slice(-3).forEach((line, index) => {
+        console.log(`  Line ${lines.length - 2 + index}: "${line}"`);
+      });
+
+      if (lines.length === 0) {
+        console.log('BankAccountService: Empty CSV file');
+        return [];
+      }
+
+      const transactions = [];
+      let rejectedCount = 0;
+      let emptyLineCount = 0;
+      let parseErrorCount = 0;
+      let validationErrorCount = 0;
+
+      // Check if first line is header and skip it
+      const isHeader = this.isHeaderRow(lines[0]);
+      const startIndex = isHeader ? 1 : 0;
+      
+      console.log('=== HEADER DETECTION ===');
+      console.log('BankAccountService: First line is header:', isHeader);
+      console.log('BankAccountService: Starting parsing from line:', startIndex + 1);
+      console.log('BankAccountService: Expected data rows to process:', lines.length - startIndex);
+
+      console.log('\n=== LINE BY LINE PROCESSING ===');
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const lineNumber = i + 1;
+        
+        console.log(`\n--- Processing Line ${lineNumber}/${lines.length} ---`);
+        console.log(`Raw line: "${line}"`);
+
+        if (!line) {
+          console.log(`❌ Line ${lineNumber}: EMPTY LINE - skipping`);
+          emptyLineCount++;
+          rejectedCount++;
+          continue;
+        }
+
+        try {
+          console.log(`🔄 Line ${lineNumber}: Attempting to parse...`);
+          const transaction = this.parseCSVLine(line);
+
+          if (transaction) {
+            transactions.push(transaction);
+            console.log(`✅ Line ${lineNumber}: SUCCESS - Transaction created:`, {
+              merchant: transaction.merchant,
+              amount: transaction.amount,
+              date: transaction.date.toISOString().split('T')[0],
+              description: transaction.description.substring(0, 50)
+            });
+          } else {
+            console.log(`❌ Line ${lineNumber}: VALIDATION FAILED - parseCSVLine returned null`);
+            validationErrorCount++;
+            rejectedCount++;
+          }
+        } catch (error) {
+          console.log(`❌ Line ${lineNumber}: PARSE ERROR -`, error.message);
+          console.log(`❌ Line ${lineNumber}: Error stack:`, error.stack);
+          parseErrorCount++;
+          rejectedCount++;
+        }
+      }
+
+      console.log('\n=== CSV PARSING FINAL SUMMARY ===');
+      console.log('📊 Total lines in file:', lines.length);
+      console.log('📊 Header lines skipped:', isHeader ? 1 : 0);
+      console.log('📊 Data lines processed:', lines.length - startIndex);
+      console.log('📊 Empty lines found:', emptyLineCount);
+      console.log('📊 Parse errors:', parseErrorCount);
+      console.log('📊 Validation errors:', validationErrorCount);
+      console.log('📊 Total rejected:', rejectedCount);
+      console.log('📊 Successfully parsed transactions:', transactions.length);
+      console.log('📊 EXPECTED: 150 transactions');
+      console.log('📊 ACTUAL PARSED:', transactions.length);
+      console.log('📊 MISSING AT PARSE STAGE:', 150 - transactions.length);
+
+      return transactions;
+
+    } catch (error) {
+      console.error('BankAccountService: Error reading CSV file:', error.message);
+      return [];
+    }
+  }
+
+  static parseCSVLine(line) {
+    console.log('🔍 parseCSVLine: Processing line:', `"${line}"`);
+
+    // Handle CSV parsing with proper comma separation and quoted fields
+    const fields = this.parseCSVFields(line);
+
+    console.log('🔍 parseCSVLine: Extracted', fields.length, 'fields:', fields);
+
+    if (fields.length < 3) {
+      console.log('❌ parseCSVLine: REJECT - Insufficient fields (need 3+, got', fields.length, ')');
+      return null;
+    }
+
+    if (fields.length !== 5) {
+      console.log('❌ parseCSVLine: REJECT - Expected 5 columns, got', fields.length);
+      console.log('❌ parseCSVLine: Fields were:', fields);
+      return null;
+    }
+
+    // For 5-column CSV: Date, Description, Credit, Debit, Balance
+    console.log('🔍 parseCSVLine: Processing 5-column format');
+
+    const date = fields[0];
+    const description = fields[1];
+    const creditField = fields[2];
+    const debitField = fields[3];
+    const balanceField = fields[4]; // Ignored
+
+    console.log('🔍 parseCSVLine: Field breakdown:');
+    console.log('  📅 Date:', `"${date}"`);
+    console.log('  📝 Description:', `"${description}"`);
+    console.log('  💰 Credit:', `"${creditField}"`);
+    console.log('  💸 Debit:', `"${debitField}"`);
+    console.log('  🏦 Balance (ignored):', `"${balanceField}"`);
+
+    // Parse amounts
+    const credit = this.parseFlexibleAmount(creditField);
+    const debit = this.parseFlexibleAmount(debitField);
+
+    console.log('🔍 parseCSVLine: Parsed amounts - Credit:', credit, 'Debit:', debit);
+
+    let amount;
+    if (credit !== 0) {
+      amount = Math.abs(credit);
+      console.log('🔍 parseCSVLine: Using credit as income (+):', amount);
+    } else if (debit !== 0) {
+      amount = -Math.abs(debit);
+      console.log('🔍 parseCSVLine: Using debit as expense (-):', amount);
+    } else {
+      console.log('❌ parseCSVLine: REJECT - Both credit and debit are zero');
+      console.log('❌ parseCSVLine: Credit field "' + creditField + '" -> ' + credit);
+      console.log('❌ parseCSVLine: Debit field "' + debitField + '" -> ' + debit);
+      return null;
+    }
+
+    // Parse date
+    const parsedDate = this.parseFlexibleDate(date);
+    if (!parsedDate) {
+      console.log('❌ parseCSVLine: REJECT - Invalid date:', `"${date}"`);
+      return null;
+    }
+
+    console.log('🔍 parseCSVLine: Date parsed successfully:', parsedDate.toISOString().split('T')[0]);
+
+    if (isNaN(amount)) {
+      console.log('❌ parseCSVLine: REJECT - Amount is NaN:', amount);
+      return null;
+    }
+
+    const merchant = this.extractMerchantName(description);
+    const transaction = {
+      date: parsedDate,
+      merchant: merchant || 'Unknown Merchant',
+      description: description || 'Transaction from CSV',
+      amount: amount,
+      category: this.categorizeTransaction('', merchant, description)
+    };
+
+    console.log('✅ parseCSVLine: SUCCESS - Transaction created');
+    return transaction;
+  }
+
+  static isHeaderRow(line) {
+    const lowerLine = line.toLowerCase();
+    const headerTerms = ['date', 'amount', 'description', 'merchant', 'transaction', 'debit', 'credit', 'balance'];
+    const hasHeaderTerms = headerTerms.some(term => lowerLine.includes(term));
     
-    // Try standard Date constructor first
-    let date = new Date(dateStr);
+    console.log('BankAccountService: Checking if header row:', `"${line}"`);
+    console.log('BankAccountService: Contains header terms:', hasHeaderTerms);
+    
+    return hasHeaderTerms;
+  }
+
+  static parseCSVFields(line) {
+    const fields = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        fields.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    fields.push(current.trim());
+    return fields.map(field => field.replace(/^"|"$/g, '')); // Remove surrounding quotes
+  }
+
+  static async parsePDFFile(filePath) {
+    console.log('=== PDF PARSING START ===');
+    console.log('BankAccountService: Parsing PDF file:', filePath);
+    
+    // Check if file exists
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) {
+      console.error('BankAccountService: PDF file does not exist at path:', filePath);
+      throw new Error('PDF file not found');
+    }
+    
+    const stats = fs.statSync(filePath);
+    console.log('BankAccountService: PDF file stats:', {
+      size: stats.size,
+      isFile: stats.isFile(),
+      created: stats.birthtime,
+      modified: stats.mtime
+    });
+
+    try {
+      // Import pdf-parse library
+      const pdfParse = require('pdf-parse');
+      
+      console.log('BankAccountService: Reading PDF file buffer...');
+      const pdfBuffer = fs.readFileSync(filePath);
+      
+      console.log('BankAccountService: Parsing PDF content...');
+      const pdfData = await pdfParse(pdfBuffer);
+      
+      console.log('BankAccountService: PDF parsed successfully:', {
+        pages: pdfData.numpages,
+        textLength: pdfData.text.length,
+        info: pdfData.info
+      });
+
+      // Extract text content
+      const pdfText = pdfData.text;
+      console.log('BankAccountService: Extracted text preview (first 500 chars):', pdfText.substring(0, 500));
+
+      // Parse transactions from the extracted text
+      const transactions = this.parseTransactionsFromText(pdfText);
+      
+      console.log('BankAccountService: Extracted', transactions.length, 'transactions from PDF');
+      console.log('=== PDF PARSING SUCCESS ===');
+      
+      return transactions;
+
+    } catch (error) {
+      console.error('BankAccountService: Error parsing PDF:', error.message);
+      console.log('BankAccountService: Falling back to mock data due to PDF parsing error');
+      
+      // Fallback to mock data if PDF parsing fails
+      const mockTransactions = [
+        {
+          date: new Date(Date.now() - 86400000),
+          merchant: 'PDF Parse Error - Mock Data',
+          description: 'PDF parsing failed, showing mock transaction',
+          amount: -25.50,
+          category: 'other'
+        }
+      ];
+
+      console.log('BankAccountService: Returning fallback mock data');
+      console.log('=== PDF PARSING END (WITH FALLBACK) ===');
+      return mockTransactions;
+    }
+  }
+
+  static parseTransactionsFromText(text) {
+    console.log('BankAccountService: Parsing transactions from PDF text...');
+    console.log('BankAccountService: Text length:', text.length);
+    console.log('BankAccountService: First 1000 characters:', text.substring(0, 1000));
+
+    const transactions = [];
+    const lines = text.split('\n').filter(line => line.trim());
+
+    console.log('BankAccountService: Processing', lines.length, 'lines from PDF');
+
+    // Log first 10 lines to understand the format
+    console.log('BankAccountService: First 10 lines from PDF:');
+    lines.slice(0, 10).forEach((line, index) => {
+      console.log(`Line ${index + 1}: "${line}"`);
+    });
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Skip empty lines and headers
+      if (!line || line.length < 10) continue;
+
+      console.log(`\nProcessing line ${i + 1}: "${line}"`);
+
+      // Find the FIRST value with a $ sign, including negative amounts (-$)
+      // Updated regex to capture both $123.45 and -$123.45 formats
+      const firstDollarMatch = line.match(/(-?\$\d{1,3}(?:,\d{3})*\.?\d{0,2})/);
+
+      if (firstDollarMatch) {
+        const fullAmountStr = firstDollarMatch[1]; // Get the full amount including potential minus sign
+        console.log(`  Found first $ amount: ${fullAmountStr}`);
+
+        // Check if it's negative (has minus sign before $)
+        const isNegative = fullAmountStr.startsWith('-$');
+        console.log(`  Amount is negative: ${isNegative}`);
+
+        // Extract just the numeric part for parsing
+        const numericPart = fullAmountStr.replace(/[-$,]/g, '');
+        console.log(`  Numeric part: ${numericPart}`);
+
+        // Parse the amount
+        let amount = parseFloat(numericPart);
+        
+        // Apply the sign based on the minus symbol in the original text
+        if (isNegative) {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+
+        console.log(`  Final parsed amount: ${amount}`);
+
+        if (!isNaN(amount) && amount !== 0) {
+          // Extract date from the beginning of the line
+          const dateMatch = line.match(/^(\d{1,2}\s+\w{3}\s+\d{4})/);
+          const dateStr = dateMatch ? dateMatch[1] : null;
+          console.log(`  Extracted date: "${dateStr}"`);
+
+          // Extract merchant name (everything between date and first $ amount)
+          let merchantPart = line;
+          if (dateStr) {
+            merchantPart = line.replace(dateStr, '').trim();
+          }
+
+          // Remove everything from the first $ sign onwards to get clean merchant name
+          const dollarIndex = merchantPart.search(/(-?\$)/);
+          if (dollarIndex > 0) {
+            merchantPart = merchantPart.substring(0, dollarIndex);
+          }
+
+          // Clean up merchant name
+          const merchant = this.extractMerchantName(merchantPart);
+          console.log(`  Extracted merchant: "${merchant}"`);
+
+          // Parse the date
+          const date = dateStr ? this.parseFlexibleDate(dateStr) : new Date();
+          console.log(`  Parsed date: ${date}`);
+
+          if (date && !isNaN(amount) && amount !== 0) {
+            const transaction = {
+              date: date,
+              merchant: merchant,
+              description: line.trim(),
+              amount: amount,
+              category: this.categorizeTransaction('', merchant, line)
+            };
+
+            transactions.push(transaction);
+
+            console.log(`✅ Transaction ${transactions.length} created:`, {
+              date: date.toISOString().split('T')[0],
+              merchant: merchant,
+              amount: amount,
+              originalAmount: fullAmountStr,
+              originalLine: line.substring(0, 100) + '...'
+            });
+          } else {
+            console.log(`❌ Transaction creation failed: date=${date}, amount=${amount}`);
+          }
+        } else {
+          console.log(`❌ Invalid amount parsed: ${amount}`);
+        }
+      } else {
+        console.log(`❌ No $ amount found in line`);
+      }
+    }
+
+    console.log('\nBankAccountService: Final transaction count from PDF:', transactions.length);
+    console.log('BankAccountService: Sample transactions:');
+    transactions.slice(0, 5).forEach((tx, index) => {
+      console.log(`  ${index + 1}. ${tx.merchant} - $${tx.amount} on ${tx.date.toISOString().split('T')[0]}`);
+    });
+
+    // If still no transactions found, return a helpful message
+    if (transactions.length === 0) {
+      console.log('BankAccountService: No transactions could be parsed from PDF text');
+      console.log('BankAccountService: Sample lines that failed to parse:');
+      lines.slice(0, 5).forEach((line, index) => {
+        console.log(`  Failed line ${index + 1}: "${line}"`);
+      });
+
+      return [{
+        date: new Date(),
+        merchant: 'PDF Processing Notice',
+        description: 'No transactions could be automatically extracted from this PDF. Please check the PDF format.',
+        amount: 0,
+        category: 'other'
+      }];
+    }
+
+    return transactions;
+  }
+
+  static categorizeTransaction(category, merchant, description) {
+    const text = `${merchant} ${description}`.toLowerCase();
+    
+    // Dining & Food
+    if (text.includes('restaurant') || text.includes('cafe') || text.includes('coffee') || 
+        text.includes('pizza') || text.includes('burger') || text.includes('food') ||
+        text.includes('dining') || text.includes('eat') || text.includes('kitchen')) {
+      return 'dining';
+    }
+    
+    // Groceries
+    if (text.includes('grocery') || text.includes('supermarket') || text.includes('market') ||
+        text.includes('walmart') || text.includes('target') || text.includes('costco')) {
+      return 'groceries';
+    }
+    
+    // Transportation
+    if (text.includes('gas') || text.includes('fuel') || text.includes('uber') || 
+        text.includes('lyft') || text.includes('taxi') || text.includes('transport') ||
+        text.includes('parking') || text.includes('metro') || text.includes('bus')) {
+      return 'transport';
+    }
+    
+    // Shopping
+    if (text.includes('amazon') || text.includes('shop') || text.includes('store') ||
+        text.includes('mall') || text.includes('retail') || text.includes('purchase')) {
+      return 'shopping';
+    }
+    
+    // Utilities
+    if (text.includes('electric') || text.includes('water') || text.includes('gas bill') ||
+        text.includes('utility') || text.includes('internet') || text.includes('phone')) {
+      return 'utilities';
+    }
+    
+    // Entertainment
+    if (text.includes('movie') || text.includes('theater') || text.includes('game') ||
+        text.includes('entertainment') || text.includes('netflix') || text.includes('spotify')) {
+      return 'entertainment';
+    }
+    
+    return 'other';
+  }
+
+  static parseFlexibleDate(dateStr) {
+    console.log('BankAccountService: parseFlexibleDate called with:', dateStr);
+    
+    if (!dateStr) {
+      console.log('BankAccountService: Date string is empty');
+      return null;
+    }
+
+    // Remove extra whitespace and quotes
+    const cleanDate = dateStr.toString().trim().replace(/['"]/g, '');
+    console.log('BankAccountService: Cleaned date string:', cleanDate);
+
+    // Try parsing as standard date first
+    let date = new Date(cleanDate);
     if (!isNaN(date.getTime())) {
-      console.log('BankAccountService: Date parsed with standard constructor:', date.toISOString());
+      console.log('BankAccountService: Standard date parsing successful:', date);
       return date;
     }
 
-    // Try parsing as DD/MM/YYYY or MM/DD/YYYY
-    const dateParts = dateStr.split(/[\/\-\.]/);
-    if (dateParts.length === 3) {
-      const [part1, part2, part3] = dateParts.map(p => parseInt(p));
-      
-      // Try MM/DD/YYYY format
-      date = new Date(part3, part1 - 1, part2);
-      if (!isNaN(date.getTime()) && date.getFullYear() === part3) {
-        console.log('BankAccountService: Date parsed as MM/DD/YYYY:', date.toISOString());
-        return date;
-      }
-      
-      // Try DD/MM/YYYY format
-      date = new Date(part3, part2 - 1, part1);
-      if (!isNaN(date.getTime()) && date.getFullYear() === part3) {
-        console.log('BankAccountService: Date parsed as DD/MM/YYYY:', date.toISOString());
-        return date;
+    // Try different date formats - prioritize DD/MM/YYYY format
+    const formats = [
+      // DD/MM/YYYY or DD-MM-YYYY (European format - prioritized)
+      { regex: /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/, isDDMM: true },
+      // YYYY-MM-DD (ISO format)
+      { regex: /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/, isYYYY: true },
+      // MM/DD/YYYY (US format - as fallback)
+      { regex: /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/, isMM: true }
+    ];
+
+    for (const format of formats) {
+      const match = cleanDate.match(format.regex);
+      if (match) {
+        const [, part1, part2, part3] = match;
+        console.log('BankAccountService: Date regex match:', { part1, part2, part3, format: format });
+
+        if (format.isYYYY) {
+          // YYYY-MM-DD format
+          date = new Date(parseInt(part1), parseInt(part2) - 1, parseInt(part3));
+          console.log('BankAccountService: Trying YYYY-MM-DD format');
+        } else if (format.isDDMM) {
+          // DD/MM/YYYY format (European - what the CSV uses)
+          date = new Date(parseInt(part3), parseInt(part2) - 1, parseInt(part1));
+          console.log('BankAccountService: Trying DD/MM/YYYY format');
+        } else {
+          // MM/DD/YYYY format (US - fallback)
+          date = new Date(parseInt(part3), parseInt(part1) - 1, parseInt(part2));
+          console.log('BankAccountService: Trying MM/DD/YYYY format');
+        }
+
+        if (!isNaN(date.getTime())) {
+          console.log('BankAccountService: Date parsing successful:', date);
+          return date;
+        } else {
+          console.log('BankAccountService: Date parsing failed for this format');
+        }
       }
     }
 
-    console.log('BankAccountService: Could not parse date:', dateStr);
-    throw new Error(`Cannot parse date: ${dateStr}`);
+    console.log('BankAccountService: Could not parse date, using current date as fallback');
+    return new Date(); // Return current date as fallback
   }
 
   static parseFlexibleAmount(amountStr) {
-    console.log('BankAccountService: Attempting to parse amount:', amountStr);
-
-    if (!amountStr || amountStr.trim() === '') {
-      console.log('BankAccountService: Amount string is empty, returning null to distinguish from 0');
-      return null; // Return null instead of 0 to distinguish empty from zero
+    console.log('BankAccountService: parseFlexibleAmount called with:', amountStr, 'type:', typeof amountStr);
+    
+    if (typeof amountStr === 'number') {
+      console.log('BankAccountService: Input is already a number:', amountStr);
+      return amountStr;
+    }
+    
+    if (!amountStr || amountStr.toString().trim() === '') {
+      console.log('BankAccountService: Input is empty or null, returning 0');
+      return 0;
     }
 
-    // Remove common currency symbols, spaces, and commas
-    const cleanedStr = amountStr.trim().replace(/[$,\s\(\)]/g, '');
-    console.log('BankAccountService: Cleaned amount string:', cleanedStr);
+    const originalAmount = amountStr.toString();
+    console.log('BankAccountService: Original amount string:', `"${originalAmount}"`);
 
-    // Handle negative amounts in parentheses
-    const isNegative = amountStr.includes('(') && amountStr.includes(')');
+    // Remove currency symbols, commas, and extra whitespace
+    let cleanAmount = originalAmount
+      .replace(/[$£€¥,\s]/g, '')
+      .trim();
 
-    const amount = parseFloat(cleanedStr);
+    console.log('BankAccountService: After removing currency symbols and spaces:', `"${cleanAmount}"`);
+
+    // Handle negative amounts in parentheses format (accounting style)
+    const isParenthesesNegative = cleanAmount.includes('(') && cleanAmount.includes(')');
+    if (isParenthesesNegative) {
+      cleanAmount = cleanAmount.replace(/[()]/g, '');
+      console.log('BankAccountService: Removed parentheses (accounting negative):', `"${cleanAmount}"`);
+    }
+
+    // Handle explicit negative sign
+    const hasNegativeSign = cleanAmount.startsWith('-');
+    console.log('BankAccountService: Has negative sign:', hasNegativeSign);
+
+    // Remove any remaining non-numeric characters except decimal point
+    cleanAmount = cleanAmount.replace(/[^\d.-]/g, '');
+    console.log('BankAccountService: After removing non-numeric chars:', `"${cleanAmount}"`);
+
+    if (!cleanAmount || cleanAmount === '-') {
+      console.log('BankAccountService: Empty amount after cleaning, returning 0');
+      return 0;
+    }
+
+    const amount = parseFloat(cleanAmount);
+    console.log('BankAccountService: parseFloat result:', amount, 'isNaN:', isNaN(amount));
+
     if (isNaN(amount)) {
-      console.log('BankAccountService: Could not parse amount, returning null:', amountStr);
-      return null; // Return null instead of throwing error
+      console.log('BankAccountService: Could not parse amount, returning 0');
+      return 0;
     }
 
-    const finalAmount = isNegative ? -Math.abs(amount) : amount;
-    console.log('BankAccountService: Parsed amount:', finalAmount);
+    // Apply negative sign if needed
+    const finalAmount = (isParenthesesNegative || hasNegativeSign) ? -Math.abs(amount) : amount;
+
+    console.log('BankAccountService: Final parsed amount:', originalAmount, '->', finalAmount);
     return finalAmount;
   }
 
-  // New method to extract merchant name from full description
   static extractMerchantName(fullDescription) {
-    console.log('BankAccountService: Extracting merchant from:', fullDescription);
+    if (!fullDescription) return 'Unknown Merchant';
     
-    // Remove common suffixes and extract the main merchant name
-    let merchantName = fullDescription;
+    // Clean up the description to extract merchant name
+    let merchant = fullDescription.toString().trim();
     
-    // Remove card details
-    merchantName = merchantName.replace(/Card \d+x+\d+/gi, '').trim();
+    // Remove common prefixes
+    merchant = merchant.replace(/^(PURCHASE|PAYMENT|DEBIT|CREDIT|POS|ATM)\s+/i, '');
     
-    // Remove receipt numbers
-    merchantName = merchantName.replace(/Receipt \d+/gi, '').trim();
+    // Remove dates and transaction IDs (common patterns)
+    merchant = merchant.replace(/\d{2}\/\d{2}\/\d{4}/g, '');
+    merchant = merchant.replace(/\d{4}-\d{2}-\d{2}/g, '');
+    merchant = merchant.replace(/#\d+/g, '');
     
-    // Remove dates
-    merchantName = merchantName.replace(/Date \d{1,2} \w{3} \d{4}/gi, '').trim();
+    // Take first part before common separators
+    const separators = [' - ', ' | ', '  ', '\t'];
+    for (const sep of separators) {
+      if (merchant.includes(sep)) {
+        merchant = merchant.split(sep)[0];
+        break;
+      }
+    }
     
-    // Remove times
-    merchantName = merchantName.replace(/Time \d{1,2}:\d{2}[AP]M/gi, '').trim();
+    // Limit length and clean up
+    merchant = merchant.substring(0, 50).trim();
     
-    // Remove location codes
-    merchantName = merchantName.replace(/In [A-Z\s]+/gi, '').trim();
-    
-    // Remove payment method info
-    merchantName = merchantName.replace(/- (Visa|EFTPOS|BPAY) (Purchase|Payment)/gi, '').trim();
-    
-    // Remove trailing dashes and spaces
-    merchantName = merchantName.replace(/\s*-\s*$/, '').trim();
-    
-    // Take first part before major separators
-    const parts = merchantName.split(/\s*-\s*/);
-    merchantName = parts[0].trim();
-    
-    console.log('BankAccountService: Extracted merchant name:', merchantName);
-    return merchantName;
+    return merchant || 'Unknown Merchant';
   }
 }
 

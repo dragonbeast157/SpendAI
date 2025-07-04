@@ -4,13 +4,29 @@ const { requireUser } = require('./middleware/auth');
 
 const router = express.Router();
 
-// Get transactions with filters
+// Add this enhanced logging at the very beginning of the GET / route, around line 8
 router.get('/', requireUser, async (req, res) => {
   try {
+    console.log('=== TRANSACTION ROUTE DEBUG START ===');
     console.log('Backend: Getting transactions for user:', req.user._id);
-    console.log('Backend: Query filters:', req.query);
+    console.log('Backend: Raw query object:', req.query);
+    console.log('Backend: Query keys:', Object.keys(req.query));
+    console.log('Backend: Query searchTerm specifically:', req.query.searchTerm);
+    console.log('Backend: Query searchTerm type:', typeof req.query.searchTerm);
+    console.log('Backend: Query searchTerm length:', req.query.searchTerm?.length);
+    
+    // Log each query parameter individually
+    Object.entries(req.query).forEach(([key, value]) => {
+      console.log(`Backend: Query param ${key} = "${value}" (type: ${typeof value})`);
+    });
+    console.log('=== TRANSACTION ROUTE DEBUG END ===');
 
     const result = await TransactionService.getTransactions(req.user._id, req.query);
+
+    console.log('=== TRANSACTION ROUTE RESPONSE ===');
+    console.log('Backend: Returning', result.transactions.length, 'transactions');
+    console.log('Backend: Pagination:', result.pagination);
+    console.log('=== END TRANSACTION ROUTE RESPONSE ===');
 
     return res.status(200).json({
       success: true,

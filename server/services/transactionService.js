@@ -4,15 +4,21 @@ const PolicyService = require('./policyService');
 class TransactionService {
 
   static async getTransactions(userId, filters = {}) {
+    console.log('=== TRANSACTION SERVICE DEBUG ENHANCED START ===');
     console.log('TransactionService: Fetching transactions for user:', userId);
     console.log('TransactionService: Filters received:', filters);
+    console.log('TransactionService: searchTerm in filters:', filters.searchTerm);
+    console.log('TransactionService: search in filters:', filters.search);
+    console.log('TransactionService: searchTerm type:', typeof filters.searchTerm);
+    console.log('TransactionService: searchTerm length:', filters.searchTerm?.length);
 
     try {
       const {
         page = 1,
-        limit = 50, // Increased default limit from 20 to 50
+        limit = 100,
         category = '',
         searchTerm = '',
+        search = '', // Add support for 'search' parameter as well
         dateRange = 'this-month',
         startDate = '',
         endDate = '',
@@ -21,6 +27,15 @@ class TransactionService {
         sortBy = 'recent'
       } = filters;
 
+      // Use either searchTerm or search parameter
+      const actualSearchTerm = searchTerm || search || '';
+
+      console.log('TransactionService: Destructured searchTerm:', searchTerm);
+      console.log('TransactionService: Destructured search:', search);
+      console.log('TransactionService: actualSearchTerm:', actualSearchTerm);
+      console.log('TransactionService: actualSearchTerm type:', typeof actualSearchTerm);
+      console.log('TransactionService: actualSearchTerm length:', actualSearchTerm?.length);
+
       // Build query
       const query = {
         userId,
@@ -28,37 +43,57 @@ class TransactionService {
       };
 
       // Category filter
-      if (category) {
+      if (category && category !== 'all') {
         query.category = category;
+        console.log('TransactionService: Added category filter:', category);
       }
 
-      // Search term filter
-      if (searchTerm) {
+      // Search term filter - FIXED: Check for truthy actualSearchTerm and trim it
+      const trimmedSearchTerm = actualSearchTerm ? actualSearchTerm.toString().trim() : '';
+      if (trimmedSearchTerm && trimmedSearchTerm.length > 0) {
+        console.log('TransactionService: Applying search term filter:', trimmedSearchTerm);
         query.$or = [
-          { merchant: { $regex: searchTerm, $options: 'i' } },
-          { description: { $regex: searchTerm, $options: 'i' } }
+          { merchant: { $regex: trimmedSearchTerm, $options: 'i' } },
+          { description: { $regex: trimmedSearchTerm, $options: 'i' } },
+          { category: { $regex: trimmedSearchTerm, $options: 'i' } }
         ];
+        console.log('TransactionService: Search query added:', JSON.stringify(query.$or));
+      } else {
+        console.log('TransactionService: No valid search term provided, skipping search filter');
       }
 
       // Date range filter - prioritize custom date range over predefined ranges
       if (startDate || endDate) {
+        console.log('=== BACKEND DATE RANGE DEBUG ===');
         console.log('TransactionService: Using custom date range - startDate:', startDate, 'endDate:', endDate);
+
         query.date = {};
-        
+
         if (startDate) {
-          query.date.$gte = new Date(startDate);
+          const startDateTime = new Date(startDate);
+          console.log('TransactionService: Parsed startDate:', startDateTime);
+          startDateTime.setHours(0, 0, 0, 0);
+          query.date.$gte = startDateTime;
+          console.log('TransactionService: Start date set to:', startDateTime);
         }
-        
+
         if (endDate) {
-          // Set end date to end of day to include transactions from the entire end date
           const endDateTime = new Date(endDate);
+          console.log('TransactionService: Parsed endDate:', endDateTime);
           endDateTime.setHours(23, 59, 59, 999);
           query.date.$lte = endDateTime;
+          console.log('TransactionService: End date set to:', endDateTime);
         }
+
+        console.log('TransactionService: Final date query:', query.date);
+        console.log('=== END BACKEND DATE RANGE DEBUG ===');
       } else {
         // Use predefined date ranges
         const now = new Date();
         let startDateRange, endDateRange;
+
+        console.log('=== BACKEND PREDEFINED DATE RANGE DEBUG ===');
+        console.log('TransactionService: Using predefined date range:', dateRange);
 
         switch (dateRange) {
           case 'this-week':
@@ -72,6 +107,7 @@ class TransactionService {
           case 'last-month':
             startDateRange = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             endDateRange = new Date(now.getFullYear(), now.getMonth(), 0);
+            endDateRange.setHours(23, 59, 59, 999);
             break;
           case 'this-year':
             startDateRange = new Date(now.getFullYear(), 0, 1);
@@ -83,7 +119,7 @@ class TransactionService {
             startDateRange = new Date(now.getFullYear(), now.getMonth() - 6, 1);
             break;
           case 'all-time':
-            // No date filter for all time
+            console.log('TransactionService: No date filter applied for all-time range');
             break;
         }
 
@@ -92,17 +128,23 @@ class TransactionService {
           if (endDateRange) {
             query.date.$lte = endDateRange;
           }
+          console.log('TransactionService: Predefined date range applied:', {
+            start: startDateRange,
+            end: endDateRange
+          });
         }
       }
 
       // Anomalies filter
-      if (anomaliesOnly) {
+      if (anomaliesOnly === true || anomaliesOnly === 'true') {
         query.hasAnomaly = true;
+        console.log('TransactionService: Filtering for anomalies only');
       }
 
       // Policy status filter
       if (policyStatus) {
         query.policyStatus = policyStatus;
+        console.log('TransactionService: Filtering by policy status:', policyStatus);
       }
 
       // Build sort
@@ -124,8 +166,19 @@ class TransactionService {
           sort = { date: -1 };
       }
 
-      // Execute query
+      // FIXED: Declare skip variable before using it in console.log
       const skip = (page - 1) * limit;
+
+      console.log('TransactionService: Final query before execution:', JSON.stringify(query, null, 2));
+      console.log('TransactionService: Query contains $or (search)?', !!query.$or);
+      console.log('TransactionService: Sort order:', sort);
+      console.log('TransactionService: Pagination - page:', page, 'limit:', limit, 'skip:', skip);
+
+      console.log('=== EXECUTING MONGODB QUERY ===');
+      console.log('TransactionService: About to execute MongoDB find with query:', JSON.stringify(query));
+      console.log('TransactionService: MongoDB query stringified:', JSON.stringify(query, null, 2));
+
+      // Execute query
       const [transactions, total] = await Promise.all([
         Transaction.find(query)
           .sort(sort)
@@ -135,8 +188,39 @@ class TransactionService {
         Transaction.countDocuments(query)
       ]);
 
+      console.log('=== MONGODB QUERY RESULTS ===');
+      console.log('TransactionService: MongoDB query executed');
+      console.log('TransactionService: Total documents matching query:', total);
+      console.log('TransactionService: Documents returned in this page:', transactions.length);
+      console.log('TransactionService: First 3 transactions from DB:', transactions.slice(0, 3).map(t => ({
+        merchant: t.merchant,
+        category: t.category,
+        description: t.description,
+        amount: t.amount
+      })));
+
+      // Add this to check if any transactions have "wage" in them at all
+      const allUserTransactions = await Transaction.find({ userId, isDeleted: false }).lean();
+      console.log('=== CHECKING ALL USER TRANSACTIONS FOR WAGE ===');
+      console.log('TransactionService: Total user transactions:', allUserTransactions.length);
+      const wageTransactions = allUserTransactions.filter(t =>
+        t.merchant.toLowerCase().includes('wage') ||
+        t.category.toLowerCase().includes('wage') ||
+        t.description.toLowerCase().includes('wage')
+      );
+      console.log('TransactionService: Transactions containing "wage":', wageTransactions.length);
+      console.log('TransactionService: Wage transactions details:', wageTransactions.map(t => ({
+        merchant: t.merchant,
+        category: t.category,
+        description: t.description
+      })));
+      console.log('=== END WAGE CHECK ===');
+
+      console.log('TransactionService: Query executed successfully');
       console.log('TransactionService: Found', transactions.length, 'transactions out of', total, 'total');
-      console.log('TransactionService: Date query applied:', JSON.stringify(query.date));
+      console.log('TransactionService: First transaction merchant:', transactions[0]?.merchant);
+      console.log('TransactionService: Sample merchants from results:', transactions.slice(0, 5).map(t => t.merchant));
+      console.log('=== TRANSACTION SERVICE DEBUG ENHANCED END ===');
 
       return {
         transactions,
@@ -149,7 +233,10 @@ class TransactionService {
         }
       };
     } catch (error) {
+      console.error('=== TRANSACTION SERVICE ERROR ===');
       console.error('TransactionService: Error fetching transactions:', error.message);
+      console.error('TransactionService: Error stack:', error.stack);
+      console.error('=== END TRANSACTION SERVICE ERROR ===');
       throw new Error(`Failed to fetch transactions: ${error.message}`);
     }
   }
@@ -182,7 +269,7 @@ class TransactionService {
     try {
       // Remove transactionType from the data as it's not in the schema
       const { transactionType, ...cleanTransactionData } = transactionData;
-      
+
       const transaction = new Transaction({
         userId,
         ...cleanTransactionData

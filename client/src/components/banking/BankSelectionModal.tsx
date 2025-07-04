@@ -30,6 +30,7 @@ export function BankSelectionModal({ isOpen, onClose, banks, onConnect }: BankSe
   const otherBanks = filteredBanks.filter(bank => !bank.isPopular)
 
   const handleConnect = (bankId: string) => {
+    console.log('BankSelectionModal: Connecting to bank ID:', bankId)
     onConnect(bankId)
     onClose()
   }

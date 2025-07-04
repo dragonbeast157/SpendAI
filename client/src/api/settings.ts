@@ -32,59 +32,28 @@ export const updateNotificationPreferences = async (preferences: any) => {
 // Request: {}
 // Response: { accounts: Array<ConnectedAccount> }
 export const getConnectedAccounts = async () => {
-  // Mocking the response
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        accounts: [
-          {
-            _id: '1',
-            bankName: 'Chase Bank',
-            accountType: 'Checking',
-            lastSync: new Date().toISOString(),
-            status: 'connected'
-          },
-          {
-            _id: '2',
-            bankName: 'Wells Fargo',
-            accountType: 'Credit Card',
-            lastSync: new Date(Date.now() - 86400000).toISOString(),
-            status: 'connected'
-          }
-        ]
-      });
-    }, 400);
-  });
-  // Uncomment the below lines to make an actual API call
-  // try {
-  //   const response = await api.get('/api/settings/accounts');
-  //   return response.data;
-  // } catch (error: any) {
-  //   throw new Error(error?.response?.data?.message || error.message);
-  // }
+  try {
+    const response = await api.get('/api/settings/accounts');
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || error.message);
+  }
 };
 
 // Description: Disconnect a bank account
-// Endpoint: DELETE /api/settings/accounts/:id
-// Request: { id: string }
+// Endpoint: DELETE /api/bank-accounts/:accountId
+// Request: { accountId: string }
 // Response: { success: boolean, message: string }
 export const disconnectAccount = async (accountId: string) => {
-  // Mocking the response
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        message: 'Account disconnected successfully'
-      });
-    }, 500);
-  });
-  // Uncomment the below lines to make an actual API call
-  // try {
-  //   const response = await api.delete(`/api/settings/accounts/${accountId}`);
-  //   return response.data;
-  // } catch (error: any) {
-  //   throw new Error(error?.response?.data?.message || error.message);
-  // }
+  try {
+    console.log('API: Disconnecting bank account via settings:', accountId);
+    const response = await api.delete(`/api/bank-accounts/${accountId}`);
+    console.log('API: Disconnect account response:', response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error('API: Error disconnecting account:', error);
+    throw new Error(error?.response?.data?.message || error.message);
+  }
 };
 
 // Description: Get spending categories
